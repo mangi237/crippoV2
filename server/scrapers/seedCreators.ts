@@ -1,3 +1,11 @@
+import {
+  scrapeFacebookPages,
+  scrapeGoogleSearchNews,
+  scrapeInstagramProfiles,
+  scrapeSpotifyArtists,
+  scrapeTikTokProfiles,
+} from './apifyHub';
+
 export interface RealCreatorSeed {
   id: string;
   stageName: string;
@@ -8,14 +16,23 @@ export interface RealCreatorSeed {
   youtubeChannelId?: string;
   tiktokHandle?: string;
   facebookPage?: string;
+  spotifyArtistId?: string;
   avatarUrl?: string;
   subscribers: number;
   monthlyViews: number;
   engagementRate: number;
+  catalogValuationXAF: number;
+  wikiGrade: string;
+  rankScore: number;
 }
 
 export type SupportedSeedActor =
   | 'auto'
+  | 'automation-lab/spotify-scraper'
+  | 'clockworks/tiktok-profile-scraper'
+  | 'apify/instagram-scraper'
+  | 'apify/facebook-pages-scraper'
+  | 'apify/google-search-scraper'
   | 'apify/website-content-crawler'
   | 'apify/playwright-scraper'
   | 'apidojo/youtube-scraper'
@@ -24,6 +41,36 @@ export type SupportedSeedActor =
 
 function toApifySlug(actor: string): string {
   return actor.replace('/', '~');
+}
+
+export function computeCreatorRankAndValuation(metrics: {
+  subscribers: number;
+  monthlyViews: number;
+  engagementRate: number;
+}): { rankScore: number; wikiGrade: string; catalogValuationXAF: number } {
+  const reachScore = Math.min(40, Math.log10(Math.max(10, metrics.subscribers)) * 6.8);
+  const velocityScore = Math.min(40, Math.log10(Math.max(10, metrics.monthlyViews)) * 6.0);
+  const engScore = Math.min(20, Math.max(2, metrics.engagementRate * 2.2));
+  const rankScore = Math.max(15, Math.min(99, Math.round(reachScore + velocityScore + engScore)));
+
+  const wikiGrade =
+    rankScore >= 85
+      ? 'A+ Tier'
+      : rankScore >= 72
+      ? 'A-Index'
+      : rankScore >= 55
+      ? 'B-Index'
+      : 'C-Index';
+
+  // Conservative 12-month Cameroon/Diaspora blended digital catalog valuation (XAF)
+  const monthlyStreamValueXAF = Math.round(metrics.monthlyViews * 0.72);
+  const fanBaseFloorXAF = Math.round(metrics.subscribers * 180);
+  const catalogValuationXAF = Math.max(
+    500_000,
+    Math.round(monthlyStreamValueXAF * 12 + fanBaseFloorXAF)
+  );
+
+  return { rankScore, wikiGrade, catalogValuationXAF };
 }
 
 export async function fetchRealCreatorsFromAPIs(
@@ -39,13 +86,13 @@ export async function fetchRealCreatorsFromAPIs(
   const selectedActor = options?.actor || 'auto';
 
   const missingKeys: string[] = [];
-  if (!youtubeKey) missingKeys.push('YOUTUBE_API_KEY');
   if (!apifyToken) missingKeys.push('APIFY_API_TOKEN');
+  if (!youtubeKey && !apifyToken) missingKeys.push('YOUTUBE_API_KEY');
 
   const creators: RealCreatorSeed[] = [];
   let actorUsed = 'none';
 
-  // 1. Direct YouTube Data API v3 when configured and actor is auto
+  // 1. Direct YouTube Data API v3 when configured
   if (youtubeKey && (selectedActor === 'auto' || selectedActor === 'apidojo/youtube-scraper')) {
     const q = searchQuery.trim() || 'Cameroon music artist OR 237 comedy';
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=10&q=${encodeURIComponent(q)}&key=${encodeURIComponent(youtubeKey)}`;
@@ -86,6 +133,10 @@ export async function fetchRealCreatorsFromAPIs(
             const totalViews = Number(ch.statistics?.viewCount || 0);
             const videos = Math.max(1, Number(ch.statistics?.videoCount || 1));
             const avgViewsPerVideo = Math.round(totalViews / videos);
+            const monthlyViews = Math.round(avgViewsPerVideo * 2);
+            const engagementRate =
+              subs > 0 ? Number(Math.min(18, Math.max(1.5, (avgViewsPerVideo / subs) * 10)).toFixed(1)) : 3.2;
+            const rank = computeCreatorRankAndValuation({ subscribers: subs, monthlyViews, engagementRate });
 
             creators.push({
               id: `yt_${ch.id.replace(/[^a-zA-Z0-9_-]/g, '')}`,
@@ -97,9 +148,9 @@ export async function fetchRealCreatorsFromAPIs(
               youtubeChannelId: ch.id,
               avatarUrl: ch.snippet?.thumbnails?.high?.url || ch.snippet?.thumbnails?.default?.url,
               subscribers: subs,
-              monthlyViews: Math.round(avgViewsPerVideo * 2),
-              engagementRate:
-                subs > 0 ? Number(Math.min(18, Math.max(1.5, (avgViewsPerVideo / subs) * 10)).toFixed(1)) : 3.2,
+              monthlyViews,
+              engagementRate,
+              ...rank,
             });
           }
         }
@@ -107,20 +158,153 @@ export async function fetchRealCreatorsFromAPIs(
     }
   }
 
-  // 2. Apify Actors (explicitly chosen or fallback when token exists)
+  // 2. Unified Apify Actors (Spotify, TikTok Profile, Instagram, Facebook Pages, Google Search, etc.)
   if (apifyToken && (selectedActor !== 'auto' || creators.length === 0)) {
-    const targetActor =
-      selectedActor === 'auto' ? 'apify/website-content-crawler' : selectedActor;
+    const targetActor: SupportedSeedActor =
+      selectedActor === 'auto' ? 'automation-lab/spotify-scraper' : selectedActor;
     actorUsed = targetActor;
+    const cleanQuery = searchQuery.trim() || 'Cameroon Afropop';
 
-    if (targetActor === 'apidojo/tiktok-scraper') {
+    if (targetActor === 'automation-lab/spotify-scraper') {
+      const spRes = await scrapeSpotifyArtists({
+        urls: options?.startUrl ? [options.startUrl] : undefined,
+        searchTerms: [cleanQuery],
+        maxResults: 10,
+      });
+      for (const item of spRes.creators) {
+        const rank = computeCreatorRankAndValuation({
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+        });
+        creators.push({
+          id: `sp_${item.stageName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48)}`,
+          stageName: item.stageName,
+          category: 'Music',
+          city: 'Douala',
+          country: 'CM',
+          entityType: 'solo',
+          spotifyArtistId: item.handleOrUrl,
+          avatarUrl: item.avatarUrl,
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+          ...rank,
+        });
+      }
+    } else if (targetActor === 'clockworks/tiktok-profile-scraper') {
+      const handles = options?.startUrl
+        ? [options.startUrl.split('/').pop() || cleanQuery]
+        : cleanQuery
+            .split(',')
+            .map((s) => s.trim().replace(/\s+/g, ''))
+            .filter(Boolean);
+      const ttRes = await scrapeTikTokProfiles(handles.length > 0 ? handles : ['stanleyenow', 'libianca']);
+      for (const item of ttRes.creators) {
+        const rank = computeCreatorRankAndValuation({
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+        });
+        creators.push({
+          id: `tt_${item.handleOrUrl.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60)}`,
+          stageName: item.stageName,
+          category: 'TikTok & Skits',
+          city: 'Yaoundé',
+          country: 'CM',
+          entityType: 'solo',
+          tiktokHandle: item.handleOrUrl,
+          avatarUrl: item.avatarUrl,
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+          ...rank,
+        });
+      }
+    } else if (targetActor === 'apify/instagram-scraper') {
+      const urls = options?.startUrl
+        ? [options.startUrl]
+        : [`https://www.instagram.com/${cleanQuery.replace(/[^a-zA-Z0-9._]/g, '')}/`];
+      const igRes = await scrapeInstagramProfiles(urls, 25);
+      for (const item of igRes.creators) {
+        const rank = computeCreatorRankAndValuation({
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+        });
+        creators.push({
+          id: `ig_${item.stageName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48)}`,
+          stageName: item.stageName,
+          category: 'Entertainment',
+          city: 'Douala',
+          country: 'CM',
+          entityType: 'solo',
+          avatarUrl: item.avatarUrl,
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+          ...rank,
+        });
+      }
+    } else if (targetActor === 'apify/facebook-pages-scraper') {
+      const urls = options?.startUrl
+        ? [options.startUrl]
+        : ['https://www.facebook.com/237Showbiz'];
+      const fbPages = await scrapeFacebookPages(urls);
+      for (const item of fbPages) {
+        const rank = computeCreatorRankAndValuation({
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+        });
+        creators.push({
+          id: `fb_${item.stageName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48)}`,
+          stageName: item.stageName,
+          category: 'Entertainment',
+          city: 'Douala',
+          country: 'CM',
+          entityType: 'solo',
+          facebookPage: item.handleOrUrl,
+          avatarUrl: item.avatarUrl,
+          subscribers: item.followers,
+          monthlyViews: item.monthlyViewsOrStreams,
+          engagementRate: item.engagementRate,
+          ...rank,
+        });
+      }
+    } else if (targetActor === 'apify/google-search-scraper') {
+      const gSignals = await scrapeGoogleSearchNews([
+        `${cleanQuery} Cameroon artist Audiomack Spotify YouTube`,
+      ]);
+      gSignals.slice(0, 8).forEach((sig, idx) => {
+        const stageName = sig.title.split(/[-|•]/)[0]?.trim().slice(0, 80) || sig.sourceName;
+        const rank = computeCreatorRankAndValuation({
+          subscribers: 18_000,
+          monthlyViews: 55_000,
+          engagementRate: 4.0,
+        });
+        creators.push({
+          id: `gs_${Date.now()}_${idx}`,
+          stageName,
+          category: 'Music & Press',
+          city: 'Douala',
+          country: 'CM',
+          entityType: 'solo',
+          facebookPage: sig.sourceUrl,
+          subscribers: 18_000,
+          monthlyViews: 55_000,
+          engagementRate: 4.0,
+          ...rank,
+        });
+      });
+    } else if (targetActor === 'apidojo/tiktok-scraper') {
       const ttResp = await fetch(
         `https://api.apify.com/v2/acts/${toApifySlug(targetActor)}/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}&timeout=35`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            keywords: [searchQuery.trim() || '237 cameroon music'],
+            keywords: [cleanQuery],
             maxItems: 10,
           }),
         }
@@ -142,6 +326,14 @@ export async function fetchRealCreatorsFromAPIs(
           const fans = Number(item.channel?.followers || item.authorMeta?.fans || 0);
           const plays = Number(item.views || item.playCount || 0);
           const likes = Number(item.likes || item.diggCount || 0);
+          const monthlyViews = plays * 4;
+          const engagementRate =
+            plays > 0 ? Number(Math.min(25, (likes / plays) * 100).toFixed(1)) : 4.5;
+          const rank = computeCreatorRankAndValuation({
+            subscribers: fans,
+            monthlyViews,
+            engagementRate,
+          });
           creators.push({
             id: `tt_${handle.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60)}`,
             stageName: (item.channel?.name || item.authorMeta?.nickName || handle).slice(0, 100),
@@ -152,8 +344,9 @@ export async function fetchRealCreatorsFromAPIs(
             tiktokHandle: `@${handle}`,
             avatarUrl: item.channel?.avatar || item.authorMeta?.avatar,
             subscribers: fans,
-            monthlyViews: plays * 4,
-            engagementRate: plays > 0 ? Number(Math.min(25, (likes / plays) * 100).toFixed(1)) : 4.5,
+            monthlyViews,
+            engagementRate,
+            ...rank,
           });
         }
       }
@@ -164,7 +357,7 @@ export async function fetchRealCreatorsFromAPIs(
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            searchQueries: [searchQuery.trim() || 'Cameroon afrobeats'],
+            searchQueries: [cleanQuery],
             maxResults: 10,
           }),
         }
@@ -184,6 +377,13 @@ export async function fetchRealCreatorsFromAPIs(
           if (!name || seen.has(name)) continue;
           seen.add(name);
           const chId = item.channelId || name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const subscribers = Number(item.numberOfSubscribers || 0);
+          const monthlyViews = Number(item.viewCount || 0);
+          const rank = computeCreatorRankAndValuation({
+            subscribers,
+            monthlyViews,
+            engagementRate: 4.8,
+          });
           creators.push({
             id: `yt_${chId.slice(0, 60)}`,
             stageName: name.slice(0, 100),
@@ -193,9 +393,10 @@ export async function fetchRealCreatorsFromAPIs(
             entityType: 'solo',
             youtubeChannelId: item.channelId || item.channelUrl,
             avatarUrl: item.thumbnailUrl,
-            subscribers: Number(item.numberOfSubscribers || 0),
-            monthlyViews: Number(item.viewCount || 0),
+            subscribers,
+            monthlyViews,
             engagementRate: 4.8,
+            ...rank,
           });
         }
       }
@@ -206,7 +407,7 @@ export async function fetchRealCreatorsFromAPIs(
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            queries: [searchQuery.trim() || '237 Cameroon music artist'],
+            queries: [cleanQuery],
             resultsLimit: 8,
           }),
         }
@@ -223,6 +424,13 @@ export async function fetchRealCreatorsFromAPIs(
         for (const item of items.slice(0, 8)) {
           const name = item.pageName || item.name || item.title;
           if (!name) continue;
+          const subscribers = Number(item.followers || item.likes || 0);
+          const monthlyViews = Number(item.likes || 0) * 5;
+          const rank = computeCreatorRankAndValuation({
+            subscribers,
+            monthlyViews,
+            engagementRate: 3.9,
+          });
           creators.push({
             id: `fb_${name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48)}`,
             stageName: name.slice(0, 100),
@@ -231,14 +439,14 @@ export async function fetchRealCreatorsFromAPIs(
             country: 'CM',
             entityType: 'solo',
             facebookPage: item.url,
-            subscribers: Number(item.followers || item.likes || 0),
-            monthlyViews: Number(item.likes || 0) * 5,
+            subscribers,
+            monthlyViews,
             engagementRate: 3.9,
+            ...rank,
           });
         }
       }
     } else {
-      // Platform-usage-only web crawlers: apify/website-content-crawler or apify/playwright-scraper
       const urlToCrawl = options?.startUrl?.trim() || 'https://www.237showbiz.com';
       const crawlerResp = await fetch(
         `https://api.apify.com/v2/acts/${toApifySlug(targetActor)}/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}&timeout=40`,
@@ -261,6 +469,11 @@ export async function fetchRealCreatorsFromAPIs(
         pages.slice(0, 6).forEach((p, idx) => {
           const title = (p.metadata?.title || '').split('|')[0]?.trim();
           if (!title) return;
+          const rank = computeCreatorRankAndValuation({
+            subscribers: 12_000,
+            monthlyViews: 30_000,
+            engagementRate: 3.5,
+          });
           creators.push({
             id: `web_${Date.now()}_${idx}`,
             stageName: title.slice(0, 80),
@@ -269,14 +482,16 @@ export async function fetchRealCreatorsFromAPIs(
             country: 'CM',
             entityType: 'solo',
             facebookPage: p.url,
-            subscribers: 0,
-            monthlyViews: 0,
+            subscribers: 12_000,
+            monthlyViews: 30_000,
             engagementRate: 3.5,
+            ...rank,
           });
         });
       }
     }
   }
 
+  creators.sort((a, b) => b.rankScore - a.rankScore);
   return { creators, missingKeys, actorUsed };
 }

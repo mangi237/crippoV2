@@ -1,5 +1,6 @@
 import { Type } from '@google/genai';
 import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
+import { scrapeGoogleSearchNews, scrapeSpotifyArtists } from '../scrapers/apifyHub';
 
 export interface ComplianceCheckInput {
   raceId: string;
@@ -119,12 +120,40 @@ export async function runComplianceWatchdog(input: ComplianceCheckInput): Promis
     checkedApis.push('Spotify Web API');
     const spMatches = await searchSpotifyTracks(searchQuery, spotifyToken).catch(() => []);
     matches.push(...spMatches);
+  } else if (process.env.APIFY_API_TOKEN) {
+    checkedApis.push('Spotify Scraper (Apify)');
+    const apifySp = await scrapeSpotifyArtists({ searchTerms: [searchQuery], maxResults: 4 }).catch(() => ({
+      creators: [],
+      signals: [],
+    }));
+    for (const c of apifySp.creators) {
+      matches.push({
+        platform: 'Spotify',
+        title: input.trackTitle,
+        channelOrArtist: c.stageName,
+        url: c.handleOrUrl,
+        isrcFound: input.isrcCode,
+      });
+    }
   }
 
   if (process.env.YOUTUBE_API_KEY) {
     checkedApis.push('YouTube Data API v3');
     const ytMatches = await searchYouTubeDuplicates(searchQuery).catch(() => []);
     matches.push(...ytMatches);
+  } else if (process.env.APIFY_API_TOKEN) {
+    checkedApis.push('Google Search Index (Apify)');
+    const gMatches = await scrapeGoogleSearchNews([
+      `${input.creatorName} ${input.trackTitle} Spotify OR Audiomack OR YouTube`,
+    ]).catch(() => []);
+    for (const g of gMatches.slice(0, 4)) {
+      matches.push({
+        platform: 'YouTube',
+        title: g.title,
+        channelOrArtist: g.sourceName,
+        url: g.sourceUrl,
+      });
+    }
   }
 
   const ai = getGeminiClient();

@@ -8,15 +8,25 @@ function getCamPayBaseUrl(): string {
 }
 
 export function isCamPayConfigured(): boolean {
-  return Boolean(process.env.CAMPAY_APP_USERNAME && process.env.CAMPAY_APP_PASSWORD);
+  return Boolean(
+    process.env.CAMPAY_PERMANENT_TOKEN ||
+      (process.env.CAMPAY_APP_USERNAME && process.env.CAMPAY_APP_PASSWORD)
+  );
 }
 
 async function getCamPayAccessToken(): Promise<string> {
+  const permanentToken = process.env.CAMPAY_PERMANENT_TOKEN?.trim();
+  if (permanentToken) {
+    return permanentToken;
+  }
+
   const username = process.env.CAMPAY_APP_USERNAME;
   const password = process.env.CAMPAY_APP_PASSWORD;
 
   if (!username || !password) {
-    throw new Error('CAMPAY_NOT_CONFIGURED: Set CAMPAY_APP_USERNAME and CAMPAY_APP_PASSWORD in your environment secrets.');
+    throw new Error(
+      'CAMPAY_NOT_CONFIGURED: Set CAMPAY_PERMANENT_TOKEN or CAMPAY_APP_USERNAME + CAMPAY_APP_PASSWORD in server environment secrets.'
+    );
   }
 
   const baseUrl = getCamPayBaseUrl();

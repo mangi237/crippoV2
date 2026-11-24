@@ -8,12 +8,17 @@ import { useMarket } from '../contexts/MarketContext';
 import type { Race, Entity, CatalystSegment, PredictionMarket } from '../types/crippo';
 
 const APIFY_ACTORS = [
-  { id: 'apify/website-content-crawler', label: 'Website Content Crawler (Free Tier)' },
-  { id: 'apify/playwright-scraper', label: 'Playwright Scraper (Free Tier)' },
-  { id: 'apidojo/youtube-scraper', label: 'YouTube Scraper (Pay-per-use)' },
-  { id: 'apidojo/tiktok-scraper', label: 'TikTok #237 Scraper (Pay-per-use)' },
-  { id: 'apify/facebook-search-scraper', label: 'Facebook Public Pages (Pay-per-use)' },
-  { id: 'apify/facebook-reels-scraper', label: 'Facebook Reels Scraper (Pay-per-use)' },
+  { id: 'auto', label: 'Auto Multi-Platform Hub (Spotify + Google News + TikTok + FB)' },
+  { id: 'automation-lab/spotify-scraper', label: 'Spotify Artist & Stream Scraper' },
+  { id: 'clockworks/tiktok-profile-scraper', label: 'TikTok Profile & Velocity Scraper' },
+  { id: 'apify/instagram-scraper', label: 'Instagram Profile & Hashtag Scraper' },
+  { id: 'apify/facebook-posts-scraper', label: 'Facebook Posts Scraper' },
+  { id: 'apify/facebook-pages-scraper', label: 'Facebook Pages Ranking Scraper' },
+  { id: 'apify/facebook-comments-scraper', label: 'Facebook Comments Sentiment Scraper' },
+  { id: 'apify/facebook-likes-scraper', label: 'Facebook Likes Velocity Scraper' },
+  { id: 'apify/google-search-scraper', label: 'Google Search & Press News Scraper' },
+  { id: 'apify/website-content-crawler', label: 'Website Content Crawler' },
+  { id: 'apidojo/youtube-scraper', label: 'YouTube Channel & Video Scraper' },
 ];
 
 interface AdminDeskProps {
@@ -595,15 +600,21 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     try {
       if (type === 'creators') {
         const resp = await apiFetch<{
-          entities: Array<{
+          creators?: Array<{
             stageName: string;
             category: string;
             city: string;
             country: string;
             youtubeChannelId?: string;
+            tiktokHandle?: string;
+            facebookPage?: string;
+            spotifyArtistId?: string;
             avatarUrl?: string;
             subscribers?: number;
             monthlyViews?: number;
+            engagementRate?: number;
+            catalogValuationXAF?: number;
+            wikiGrade?: string;
           }>;
         }>('/api/scrapers/seed-creators', {
           method: 'POST',
@@ -614,7 +625,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           }),
         });
         let saved = 0;
-        for (const item of resp.entities || []) {
+        for (const item of resp.creators || []) {
           const cleanId = `ent_${item.stageName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 40)}_${Date.now().toString(36).slice(-4)}`;
           await setDoc(doc(db, 'entities', cleanId), {
             id: cleanId,
@@ -624,9 +635,15 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             country: item.country || 'Cameroon',
             entityType: 'solo',
             ...(item.youtubeChannelId ? { youtubeChannelId: item.youtubeChannelId } : {}),
+            ...(item.tiktokHandle ? { tiktokHandle: item.tiktokHandle } : {}),
+            ...(item.facebookPage ? { facebookPage: item.facebookPage } : {}),
+            ...(item.spotifyArtistId ? { spotifyArtistId: item.spotifyArtistId } : {}),
             ...(item.avatarUrl ? { avatarUrl: item.avatarUrl } : {}),
             ...(typeof item.subscribers === 'number' ? { subscribers: item.subscribers } : {}),
             ...(typeof item.monthlyViews === 'number' ? { monthlyViews: item.monthlyViews } : {}),
+            ...(typeof item.engagementRate === 'number' ? { engagementRate: item.engagementRate } : {}),
+            ...(typeof item.catalogValuationXAF === 'number' ? { catalogValuationXAF: item.catalogValuationXAF } : {}),
+            ...(item.wikiGrade ? { wikiGrade: item.wikiGrade } : {}),
             isClaimed: false,
             kycStatus: 'unverified',
             isPublic: true,
@@ -635,7 +652,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           });
           saved++;
         }
-        showToast('Scraper Complete', `${saved} creator dossiers stored via ${scraperActor}.`);
+        showToast('Scraper Complete', `${saved} creator dossiers ranked & stored via ${scraperActor}.`);
       } else if (type === 'pulse') {
         const resp = await apiFetch<{
           catalysts: Array<{

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Type } from '@google/genai';
 import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
+import { scrapeSpotifyArtists } from '../scrapers/apifyHub';
 
 export type ListenerRegion = 'cameroon_africa' | 'diaspora_mixed' | 'global_eu_us';
 
@@ -111,12 +112,34 @@ export async function underwriteRace(input: UnderwriteInput): Promise<Underwrite
       : 'cameroon_africa';
   const regionRates = REGIONAL_STREAM_RATES[listenerRegion];
 
+  let effectiveSubscribers = Math.max(0, input.subscribers);
+  let effectiveMonthlyViews = Math.max(0, input.monthlyViews);
+  let liveTelemetrySource = 'Creator Dossier';
+
+  if (process.env.APIFY_API_TOKEN && input.creatorName.trim()) {
+    try {
+      const spData = await scrapeSpotifyArtists({
+        searchTerms: [input.creatorName.trim()],
+        maxResults: 2,
+      });
+      const match = spData.creators[0];
+      if (match) {
+        effectiveSubscribers = Math.max(effectiveSubscribers, match.followers);
+        effectiveMonthlyViews = Math.max(effectiveMonthlyViews, match.monthlyViewsOrStreams);
+        liveTelemetrySource = `Spotify Apify (${match.followers.toLocaleString()} listeners)`;
+      }
+    } catch {
+      // Keep baseline dossier metrics if Apify call times out
+    }
+  }
+
   const ai = getGeminiClient();
 
   const prompt = `You are Crippo's institutional AI Underwriter evaluating a Cameroonian/African digital creator project Race.
 Evaluate the project strictly based on REGIONAL streaming economics so fans are never exploited by inflated targets:
 - Selected Listener Region: ${regionRates.label}
 - Regional Benchmarks: YouTube RPM ~ ${regionRates.youtubeRpmXAF} XAF per 1,000 views; Spotify blended payout ~ ${regionRates.spotifyRateXAF} XAF/stream; Audiomack ~ ${regionRates.audiomackRateXAF} XAF/stream (1 USD ≈ 610 XAF).
+- Telemetry Source: ${liveTelemetrySource}
 
 Project Input:
 - Creator: ${input.creatorName} (${input.entityType})
@@ -127,8 +150,8 @@ Project Input:
 - Revenue Share Pledged to Investors: ${input.revSharePct}%
 - ROI Payout Duration: ${input.roiDurationMonths} months
 - Distributor: ${input.distributor}
-- Creator Subscribers/Followers: ${input.subscribers}
-- Monthly Views: ${input.monthlyViews}
+- Creator Subscribers/Listeners: ${effectiveSubscribers}
+- Monthly Views/Streams: ${effectiveMonthlyViews}
 - Engagement Rate: ${input.engagementRate}%
 
 Score each dimension from 0 to 100 conservatively:
@@ -203,8 +226,8 @@ Provide concise underwriting reasoning, a short regionalValuationNote summarizin
       0.15 * scoreBreakdown.consistency
   );
 
-  // Deterministic regional floor/sanity check from monthly views + region rates
-  const baselineMonthlyStreams = Math.max(10_000, input.monthlyViews || input.subscribers * 2);
+  // Deterministic regional floor/sanity check from live monthly views/streams + region rates
+  const baselineMonthlyStreams = Math.max(10_000, effectiveMonthlyViews || effectiveSubscribers * 2);
   const blendedPerStreamXAF = (regionRates.spotifyRateXAF + regionRates.audiomackRateXAF) / 2;
   const deterministicRegionalCapXAF = Math.round(
     baselineMonthlyStreams *
@@ -216,7 +239,7 @@ Provide concise underwriting reasoning, a short regionalValuationNote summarizin
   const aiProjected = Math.max(100_000, Math.round(parsed.projectedRevenueXAF || 0));
   const projectedRevenueXAF = Math.max(
     100_000,
-    Math.min(aiProjected, Math.max(aiProjected, deterministicRegionalCapXAF))
+    Math.min(aiProjected, Math.max(deterministicRegionalCapXAF * 1.8, 350_000))
   );
 
   const investorPoolXAF = projectedRevenueXAF * (input.revSharePct / 100);

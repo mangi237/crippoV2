@@ -880,6 +880,13 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                   </span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-on-surface-variant">AI Fair Split:</span>
+                  <span className="font-mono-num font-bold text-secondary">
+                    {auditPreview.valuationBreakdown.recommendedTotalShares.toLocaleString()} sh @{' '}
+                    {auditPreview.valuationBreakdown.fairSharePriceXAF.toLocaleString()} XAF
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-on-surface-variant">Spotify / Audiomack:</span>
                   <span className="font-mono-num font-bold text-on-surface">
                     {auditPreview.valuationBreakdown.spotifyRateXAF} /{' '}
@@ -892,6 +899,19 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                     {auditPreview.valuationBreakdown.youtubeRpmXAF.toLocaleString()} XAF/1k
                   </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTotalShares(auditPreview.valuationBreakdown.recommendedTotalShares);
+                    showToast(
+                      'Share Split Applied',
+                      `${auditPreview.valuationBreakdown.recommendedTotalShares} shares @ ${auditPreview.valuationBreakdown.fairSharePriceXAF.toLocaleString()} XAF covers your ${grossTargetXAF.toLocaleString()} XAF gross target.`
+                    );
+                  }}
+                  className="py-2 px-3 rounded-lg bg-secondary/15 text-secondary font-label-xs uppercase font-bold hover:bg-secondary/25 transition-colors"
+                >
+                  Apply AI Share Split ({auditPreview.valuationBreakdown.recommendedTotalShares} shares)
+                </button>
                 <p className="font-body-sm text-on-surface-variant pt-1 border-t border-outline-variant/20">
                   {auditPreview.regionalValuationNote}
                 </p>

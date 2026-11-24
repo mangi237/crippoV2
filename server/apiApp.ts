@@ -44,7 +44,8 @@ export function createApiApp(): express.Express {
     const youtubeConfigured = Boolean(process.env.YOUTUBE_API_KEY);
     const apifyConfigured = Boolean(process.env.APIFY_API_TOKEN);
     const spotifyConfigured = Boolean(
-      process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET
+      (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) ||
+        process.env.APIFY_API_TOKEN
     );
 
     res.json({
@@ -275,17 +276,52 @@ export function createApiApp(): express.Express {
         actor: actor as never,
         startUrl,
       });
-      if (result.creators.length === 0 && result.missingKeys.length === 2) {
+      if (result.creators.length === 0 && result.missingKeys.length >= 2) {
         res.status(424).json({
-          error: 'Configure YOUTUBE_API_KEY or APIFY_API_TOKEN to fetch real creators.',
+          error: 'Configure APIFY_API_TOKEN or YOUTUBE_API_KEY to fetch real creators.',
           missingKeys: result.missingKeys,
         });
         return;
       }
-      res.json(result);
+      res.json({
+        ...result,
+        entities: result.creators,
+      });
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Failed to fetch real creators.',
+      });
+    }
+  });
+
+  // Dynamic Share Repricing & Creator Rank Calculator (Protected)
+  app.post('/api/agents/reprice-market', requireAuth, (req: AuthenticatedRequest, res) => {
+    try {
+      const unitSharePriceXAF = Math.max(100, Number(req.body?.unitSharePriceXAF || 5000));
+      const sharesSold = Math.max(0, Number(req.body?.sharesSold || 0));
+      const totalShares = Math.max(1, Number(req.body?.totalShares || 100));
+      const catalystImpacts = Array.isArray(req.body?.catalystImpacts)
+        ? req.body.catalystImpacts.map((n: unknown) => Number(n) || 0)
+        : [];
+      const netMomentumPct = catalystImpacts.reduce((acc: number, v: number) => acc + v, 0);
+      const demandRatio = Math.min(1, sharesSold / totalShares);
+      const demandBoostPct = demandRatio * 12; // up to +12% from active raise demand
+      const boundedShiftPct = Math.max(-35, Math.min(50, netMomentumPct * 0.4 + demandBoostPct));
+      const nextSharePriceXAF = Math.max(
+        500,
+        Math.round((unitSharePriceXAF * (1 + boundedShiftPct / 100)) / 50) * 50
+      );
+
+      res.json({
+        unitSharePriceXAF,
+        nextSharePriceXAF,
+        netMomentumPct: Number(netMomentumPct.toFixed(1)),
+        demandBoostPct: Number(demandBoostPct.toFixed(1)),
+        appliedShiftPct: Number(boundedShiftPct.toFixed(1)),
+      });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Market repricing calculation failed.',
       });
     }
   });

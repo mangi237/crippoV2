@@ -236,17 +236,21 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
     setSyncingCreators(true);
     try {
       const resp = await apiFetch<{
-        entities: Array<{
+        creators?: Array<{
           stageName: string;
           category: string;
           city: string;
           country: string;
           youtubeChannelId?: string;
           tiktokHandle?: string;
+          facebookPage?: string;
+          spotifyArtistId?: string;
           avatarUrl?: string;
           subscribers?: number;
           monthlyViews?: number;
           engagementRate?: number;
+          catalogValuationXAF?: number;
+          wikiGrade?: string;
         }>;
       }>('/api/scrapers/seed-creators', {
         method: 'POST',
@@ -254,7 +258,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
       });
 
       let saved = 0;
-      for (const item of resp.entities || []) {
+      for (const item of resp.creators || []) {
         const cleanId = `ent_${item.stageName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 40)}_${Date.now().toString(36).slice(-4)}`;
         await setDoc(doc(db, 'entities', cleanId), {
           id: cleanId,
@@ -265,10 +269,14 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
           entityType: 'solo',
           ...(item.youtubeChannelId ? { youtubeChannelId: item.youtubeChannelId } : {}),
           ...(item.tiktokHandle ? { tiktokHandle: item.tiktokHandle } : {}),
+          ...(item.facebookPage ? { facebookPage: item.facebookPage } : {}),
+          ...(item.spotifyArtistId ? { spotifyArtistId: item.spotifyArtistId } : {}),
           ...(item.avatarUrl ? { avatarUrl: item.avatarUrl } : {}),
           ...(typeof item.subscribers === 'number' ? { subscribers: item.subscribers } : {}),
           ...(typeof item.monthlyViews === 'number' ? { monthlyViews: item.monthlyViews } : {}),
           ...(typeof item.engagementRate === 'number' ? { engagementRate: item.engagementRate } : {}),
+          ...(typeof item.catalogValuationXAF === 'number' ? { catalogValuationXAF: item.catalogValuationXAF } : {}),
+          ...(item.wikiGrade ? { wikiGrade: item.wikiGrade } : {}),
           isClaimed: false,
           kycStatus: 'unverified',
           isPublic: true,
