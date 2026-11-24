@@ -1,6 +1,6 @@
 import { Type } from '@google/genai';
-import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini.ts';
-import { initiateCamPayWithdraw, isCamPayConfigured } from '../payments/campay.ts';
+import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
+import { initiateCamPayWithdraw, isCamPayConfigured } from '../payments/campay';
 
 export interface DividendHolderInput {
   uid: string;

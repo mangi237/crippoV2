@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
+import bundledFirebaseConfig from '../../firebase-applet-config.json';
 
 export interface VerifiedFirebaseUser {
   uid: string;
@@ -14,12 +15,12 @@ function getFirebaseApiKey(): string | null {
     const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(configPath)) {
       const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      return raw.apiKey || null;
+      if (raw?.apiKey) return raw.apiKey;
     }
   } catch {
-    return null;
+    // Fall back to bundled config below
   }
-  return null;
+  return (bundledFirebaseConfig as { apiKey?: string })?.apiKey || process.env.FIREBASE_API_KEY || null;
 }
 
 export async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFirebaseUser | null> {

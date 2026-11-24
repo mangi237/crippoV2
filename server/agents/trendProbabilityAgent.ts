@@ -1,6 +1,6 @@
 import { Type } from '@google/genai';
-import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini.ts';
-import { runCulturalPulsePipeline } from './culturalPulseAgent.ts';
+import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
+import { runCulturalPulsePipeline } from './culturalPulseAgent';
 
 export interface MintedPrediction {
   entityName: string;

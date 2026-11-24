@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Type } from '@google/genai';
-import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini.ts';
+import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
 
 export type ListenerRegion = 'cameroon_africa' | 'diaspora_mixed' | 'global_eu_us';
 

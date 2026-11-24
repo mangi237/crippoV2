@@ -1,5 +1,5 @@
 import { Type } from '@google/genai';
-import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini.ts';
+import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
 
 export interface RawSocialSignal {
   sourcePlatform: 'TikTok' | 'Facebook' | 'YouTube' | 'Web';
