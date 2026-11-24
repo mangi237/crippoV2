@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../services/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage, handleFirestoreError, OperationType } from '../services/firebase';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useMarket } from '../contexts/MarketContext';
@@ -72,6 +73,16 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   const [entNiu, setEntNiu] = useState('');
   const [entSubscribers, setEntSubscribers] = useState(50000);
   const [entBusy, setEntBusy] = useState(false);
+  const [entLabel, setEntLabel] = useState('');
+  const [entAge, setEntAge] = useState('');
+  const [entGenres, setEntGenres] = useState('');
+  const [entDescription, setEntDescription] = useState('');
+  const [entBio, setEntBio] = useState('');
+  const [entYoutube, setEntYoutube] = useState('');
+  const [entTiktok, setEntTiktok] = useState('');
+  const [entInstagram, setEntInstagram] = useState('');
+  const [entAvatarUrl, setEntAvatarUrl] = useState('');
+  const [entUploading, setEntUploading] = useState(false);
 
   // Apify & Cultural Scraper State
   const [scraperActor, setScraperActor] = useState(APIFY_ACTORS[0].id);
@@ -326,8 +337,10 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   ) => {
     setBusyId(memo.id);
     try {
-      await updateDoc(doc(db, 'memos', memo.id), {
-        status: decision,
+      // Same collection the creator's dashboard reads. 'listed' is the status that unlocks "Launch a Raise".
+      await updateDoc(doc(db, 'memo_requests', memo.id), {
+        status: decision === 'approved' ? 'listed' : 'rejected',
+        reviewedAt: serverTimestamp(),
       });
 
       let createdEntityId: string | undefined;
@@ -559,16 +572,42 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     }
   };
 
+  const handleEntAvatarUpload = async (file: File) => {
+    setEntUploading(true);
+    try {
+      const storageRef = ref(storage, `creators/avatars/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      setEntAvatarUrl(await getDownloadURL(storageRef));
+      showToast('Photo Uploaded', 'Creator photo stored.');
+    } catch (err: unknown) {
+      showToast('Upload Failed', (err as Error).message || 'Could not upload photo.', 'error');
+    } finally {
+      setEntUploading(false);
+    }
+  };
+
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!entStageName.trim()) return;
     setEntBusy(true);
     const id = `ent_${entStageName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 36)}_${Date.now().toString(36).slice(-4)}`;
+    const genres = entGenres.split(',').map((g) => g.trim()).filter(Boolean).slice(0, 10);
+    const ageNum = Number(entAge);
     try {
-      const newEnt: Entity = {
+      // Plain object (not typed as Entity) so the extra profile fields are stored as written
+      const newEnt = {
         id,
-        stageName: entStageName.trim(),
-        ...(entLegalName.trim() ? { legalFullName: entLegalName.trim() } : {}),
+        stageName: entStageName.trim().slice(0, 100),
+        ...(entLegalName.trim() ? { legalFullName: entLegalName.trim().slice(0, 120) } : {}),
+        ...(entBio.trim() ? { bio: entBio.trim().slice(0, 4000) } : {}),
+        ...(entDescription.trim() ? { description: entDescription.trim().slice(0, 400) } : {}),
+        ...(entLabel.trim() ? { labelName: entLabel.trim().slice(0, 120) } : {}),
+        ...(ageNum > 0 ? { age: ageNum } : {}),
+        ...(genres.length ? { genres } : {}),
+        ...(entAvatarUrl ? { avatarUrl: entAvatarUrl } : {}),
+        ...(entYoutube.trim() ? { youtubeChannelId: entYoutube.trim() } : {}),
+        ...(entTiktok.trim() ? { tiktokHandle: entTiktok.trim().replace(/^@/, '') } : {}),
+        ...(entInstagram.trim() ? { instagramHandle: entInstagram.trim().replace(/^@/, '') } : {}),
         category: entCategory,
         city: entCity,
         country: 'Cameroon',
@@ -587,7 +626,16 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
       setEntStageName('');
       setEntLegalName('');
       setEntNiu('');
-      showToast('Entity Published', `${newEnt.stageName} added to Crippo Wikipedia Index.`);
+      setEntLabel('');
+      setEntAge('');
+      setEntGenres('');
+      setEntDescription('');
+      setEntBio('');
+      setEntYoutube('');
+      setEntTiktok('');
+      setEntInstagram('');
+      setEntAvatarUrl('');
+      showToast('Creator Published', `${newEnt.stageName} added to the Creators Directory (unclaimed).`);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `entities/${id}`);
     } finally {
@@ -1203,8 +1251,11 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             className="lg:col-span-5 flex flex-col gap-3"
           >
             <h2 className="font-headline-sm text-on-surface font-bold">
-              Publish Canonical Creator Entity
+              Publish Creator Profile
             </h2>
+            <p className="font-body-sm text-on-surface-variant">
+              Admin-created profile. The creator can claim it later; raises stay locked until the claim is verified.
+            </p>
             <input
               type="text"
               required
@@ -1223,6 +1274,24 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
+                value={entLabel}
+                onChange={(e) => setEntLabel(e.target.value)}
+                placeholder="Label / Agency (optional)"
+                className="px-3 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent"
+              />
+              <input
+                type="number"
+                min={0}
+                max={120}
+                value={entAge}
+                onChange={(e) => setEntAge(e.target.value)}
+                placeholder="Age"
+                className="px-3 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
                 value={entCategory}
                 onChange={(e) => setEntCategory(e.target.value)}
                 placeholder="Category"
@@ -1236,6 +1305,50 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                 className="px-3 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent"
               />
             </div>
+            <input
+              type="text"
+              value={entGenres}
+              onChange={(e) => setEntGenres(e.target.value)}
+              placeholder="Genres, comma separated (Afropop, Makossa)"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent"
+            />
+            <input
+              type="text"
+              value={entDescription}
+              onChange={(e) => setEntDescription(e.target.value)}
+              placeholder="Short description (one line)"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent"
+            />
+            <textarea
+              rows={6}
+              value={entBio}
+              onChange={(e) => setEntBio(e.target.value)}
+              placeholder="Wikipedia-style biography: early life, career, releases, awards"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                value={entYoutube}
+                onChange={(e) => setEntYoutube(e.target.value)}
+                placeholder="YouTube channel ID"
+                className="px-3 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num"
+              />
+              <input
+                type="text"
+                value={entTiktok}
+                onChange={(e) => setEntTiktok(e.target.value)}
+                placeholder="TikTok handle"
+                className="px-3 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num"
+              />
+            </div>
+            <input
+              type="text"
+              value={entInstagram}
+              onChange={(e) => setEntInstagram(e.target.value)}
+              placeholder="Instagram handle"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num"
+            />
             <div className="grid grid-cols-2 gap-3">
               <input
                 type="text"
@@ -1260,6 +1373,20 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
               placeholder="NIU Number (Optional)"
               className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num"
             />
+            <label className="p-3 rounded-xl border border-dashed border-outline-variant cursor-pointer flex items-center justify-between">
+              <span className="font-label-md text-secondary font-semibold">
+                {entUploading ? 'Uploading photo...' : entAvatarUrl ? 'Creator photo uploaded' : 'Upload creator photo (optional)'}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleEntAvatarUpload(f);
+                }}
+              />
+            </label>
             <button
               type="submit"
               disabled={entBusy}
