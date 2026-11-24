@@ -1,0 +1,315 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --c-surface: #ffffff;
+  --c-background: #ffffff;
+  --c-surface-bright: #ffffff;
+  --c-surface-dim: #e5e7eb;
+  --c-surface-variant: #f1f5f9;
+  --c-surface-container-lowest: #ffffff;
+  --c-surface-container-low: #f8f9fc;
+  --c-surface-container: #f1f3f8;
+  --c-surface-container-high: #e8ecf4;
+  --c-surface-container-highest: #dde2ee;
+  --c-primary: #000000;
+  --c-primary-container: #24123c;
+  --c-primary-fixed: #eddcff;
+  --c-primary-fixed-dim: #d5bcf2;
+  --c-inverse-primary: #d5bcf2;
+  --c-on-primary: #ffffff;
+  --c-on-primary-container: #907aac;
+  --c-on-primary-fixed: #24123c;
+  --c-on-primary-fixed-variant: #513e6b;
+  --c-secondary: #6f30dc;
+  --c-secondary-container: #894ff7;
+  --c-secondary-fixed: #eaddff;
+  --c-secondary-fixed-dim: #d2bcff;
+  --c-on-secondary: #ffffff;
+  --c-on-secondary-container: #fffbff;
+  --c-on-secondary-fixed: #25005a;
+  --c-on-secondary-fixed-variant: #5900c7;
+  --c-tertiary: #000000;
+  --c-tertiary-container: #002114;
+  --c-tertiary-fixed: #85f8c4;
+  --c-tertiary-fixed-dim: #68dba9;
+  --c-on-tertiary: #ffffff;
+  --c-on-tertiary-container: #069669;
+  --c-on-tertiary-fixed: #002114;
+  --c-on-tertiary-fixed-variant: #005137;
+  --c-on-surface: #131b2e;
+  --c-on-background: #131b2e;
+  --c-on-surface-variant: #4a454e;
+  --c-inverse-surface: #283044;
+  --c-inverse-on-surface: #eef0ff;
+  --c-outline: #7b757e;
+  --c-outline-variant: #ccc4cf;
+  --c-surface-tint: #6a5584;
+  --c-error: #ba1a1a;
+  --c-error-container: #ffdad6;
+  --c-on-error: #ffffff;
+  --c-on-error-container: #93000a;
+}
+
+.dark {
+  --c-surface: #000000;
+  --c-background: #000000;
+  --c-surface-bright: #09090b;
+  --c-surface-dim: #000000;
+  --c-surface-variant: #18181b;
+  --c-surface-container-lowest: #0a0a0c;
+  --c-surface-container-low: #09090b;
+  --c-surface-container: #121216;
+  --c-surface-container-high: #18181d;
+  --c-surface-container-highest: #27272a;
+  --c-primary: #6f30dc;
+  --c-primary-container: #160c26;
+  --c-primary-fixed: #2e1065;
+  --c-primary-fixed-dim: #c4b5fd;
+  --c-inverse-primary: #ddd6fe;
+  --c-on-primary: #ffffff;
+  --c-on-primary-container: #c4b5fd;
+  --c-on-primary-fixed: #f5f3ff;
+  --c-on-primary-fixed-variant: #ddd6fe;
+  --c-secondary: #8b5cf6;
+  --c-secondary-container: #6f30dc;
+  --c-secondary-fixed: #1e1233;
+  --c-secondary-fixed-dim: #a78bfa;
+  --c-on-secondary: #ffffff;
+  --c-on-secondary-container: #ffffff;
+  --c-on-secondary-fixed: #ede9fe;
+  --c-on-secondary-fixed-variant: #c4b5fd;
+  --c-tertiary: #10b981;
+  --c-tertiary-container: #052e22;
+  --c-tertiary-fixed: #064e3b;
+  --c-tertiary-fixed-dim: #34d399;
+  --c-on-tertiary: #ffffff;
+  --c-on-tertiary-container: #10b981;
+  --c-on-tertiary-fixed: #6ee7b7;
+  --c-on-tertiary-fixed-variant: #34d399;
+  --c-on-surface: #f8fafc;
+  --c-on-background: #f8fafc;
+  --c-on-surface-variant: #a1a1aa;
+  --c-inverse-surface: #f8fafc;
+  --c-inverse-on-surface: #09090b;
+  --c-outline: #71717a;
+  --c-outline-variant: #27272a;
+  --c-surface-tint: #8b5cf6;
+  --c-error: #ef4444;
+  --c-error-container: #450a0a;
+  --c-on-error: #ffffff;
+  --c-on-error-container: #fecaca;
+}
+
+@theme inline {
+  --color-surface: var(--c-surface);
+  --color-background: var(--c-background);
+  --color-surface-bright: var(--c-surface-bright);
+  --color-surface-dim: var(--c-surface-dim);
+  --color-surface-variant: var(--c-surface-variant);
+  --color-surface-container-lowest: var(--c-surface-container-lowest);
+  --color-surface-container-low: var(--c-surface-container-low);
+  --color-surface-container: var(--c-surface-container);
+  --color-surface-container-high: var(--c-surface-container-high);
+  --color-surface-container-highest: var(--c-surface-container-highest);
+  --color-primary: var(--c-primary);
+  --color-primary-container: var(--c-primary-container);
+  --color-primary-fixed: var(--c-primary-fixed);
+  --color-primary-fixed-dim: var(--c-primary-fixed-dim);
+  --color-inverse-primary: var(--c-inverse-primary);
+  --color-on-primary: var(--c-on-primary);
+  --color-on-primary-container: var(--c-on-primary-container);
+  --color-on-primary-fixed: var(--c-on-primary-fixed);
+  --color-on-primary-fixed-variant: var(--c-on-primary-fixed-variant);
+  --color-secondary: var(--c-secondary);
+  --color-secondary-container: var(--c-secondary-container);
+  --color-secondary-fixed: var(--c-secondary-fixed);
+  --color-secondary-fixed-dim: var(--c-secondary-fixed-dim);
+  --color-on-secondary: var(--c-on-secondary);
+  --color-on-secondary-container: var(--c-on-secondary-container);
+  --color-on-secondary-fixed: var(--c-on-secondary-fixed);
+  --color-on-secondary-fixed-variant: var(--c-on-secondary-fixed-variant);
+  --color-tertiary: var(--c-tertiary);
+  --color-tertiary-container: var(--c-tertiary-container);
+  --color-tertiary-fixed: var(--c-tertiary-fixed);
+  --color-tertiary-fixed-dim: var(--c-tertiary-fixed-dim);
+  --color-on-tertiary: var(--c-on-tertiary);
+  --color-on-tertiary-container: var(--c-on-tertiary-container);
+  --color-on-tertiary-fixed: var(--c-on-tertiary-fixed);
+  --color-on-tertiary-fixed-variant: var(--c-on-tertiary-fixed-variant);
+  --color-on-surface: var(--c-on-surface);
+  --color-on-background: var(--c-on-background);
+  --color-on-surface-variant: var(--c-on-surface-variant);
+  --color-inverse-surface: var(--c-inverse-surface);
+  --color-inverse-on-surface: var(--c-inverse-on-surface);
+  --color-outline: var(--c-outline);
+  --color-outline-variant: var(--c-outline-variant);
+  --color-surface-tint: var(--c-surface-tint);
+  --color-error: var(--c-error);
+  --color-error-container: var(--c-error-container);
+  --color-on-error: var(--c-on-error);
+  --color-on-error-container: var(--c-on-error-container);
+
+  --spacing-gutter: 1rem;
+  --spacing-margin: 1rem;
+  --spacing-space-xl: 2.5rem;
+  --spacing-gutter-desktop: 1.5rem;
+  --spacing-space-lg: 1.5rem;
+  --spacing-space-xs: 0.25rem;
+  --spacing-margin-tablet: 1.5rem;
+  --spacing-margin-desktop: 2.5rem;
+  --spacing-space-md: 1rem;
+  --spacing-space-sm: 0.5rem;
+}
+
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--c-surface);
+    color: var(--c-on-surface);
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.dark,
+  html.dark body {
+    background-color: #000000;
+    color: #f8fafc;
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+.font-display-lg {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 44px;
+  line-height: 52px;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-display-lg-mobile {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 32px;
+  line-height: 38px;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-headline-lg {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 30px;
+  line-height: 38px;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+.font-headline-lg-mobile {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 24px;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.font-headline-sm {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 20px;
+  line-height: 26px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.font-ticker-val {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  line-height: 18px;
+  letter-spacing: 0.01em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-label-md {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.font-label-xs {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 10px;
+  line-height: 12px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.font-body-lg {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+}
+
+.font-body-md {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+.font-body-sm {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+.font-mono-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes crippo-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-ticker {
+  display: flex;
+  width: max-content;
+  animation: crippo-marquee 32s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ticker {
+    animation: none;
+  }
+}

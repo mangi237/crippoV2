@@ -1,0 +1,362 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Public, anonymized exchange identity for a Crippo user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "anonymousId": { "type": "string", "maxLength": 32 },
+        "displayName": { "type": "string", "maxLength": 80 },
+        "city": { "type": "string", "maxLength": 40 },
+        "interests": { "type": "array" },
+        "onboardingComplete": { "type": "boolean" },
+        "creatorModeEnabled": { "type": "boolean" },
+        "claimedEntityId": { "type": "string", "maxLength": 128 },
+        "kycStatus": { "type": "string", "enum": ["none", "pending", "verified", "rejected"] },
+        "affiliationType": { "type": "string", "enum": ["solo", "agency"] },
+        "agencyName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "anonymousId", "displayName", "city", "onboardingComplete", "creatorModeEnabled", "kycStatus", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Strictly isolated PII, Mobile Money, and KYC documents owned by a single user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 20, "pattern": "^2376[0-9]{8}$" },
+        "momoProvider": { "type": "string", "enum": ["MTN", "ORANGE", "OTHER"] },
+        "fullNameLegal": { "type": "string", "maxLength": 120 },
+        "cniNumber": { "type": "string", "maxLength": 40 },
+        "niuNumber": { "type": "string", "maxLength": 40 },
+        "cniFrontUrl": { "type": "string", "maxLength": 500 },
+        "cniBackUrl": { "type": "string", "maxLength": 500 },
+        "selfieUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "phone", "momoProvider", "createdAt", "updatedAt"]
+    },
+    "Entity": {
+      "title": "Entity",
+      "description": "Verified or seeded African creator, talent agency, or record label profile.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "stageName": { "type": "string", "maxLength": 100 },
+        "legalFullName": { "type": "string", "maxLength": 120 },
+        "bio": { "type": "string", "maxLength": 600 },
+        "upcomingProjects": { "type": "array" },
+        "category": { "type": "string", "maxLength": 40 },
+        "city": { "type": "string", "maxLength": 40 },
+        "country": { "type": "string", "maxLength": 40 },
+        "entityType": { "type": "string", "enum": ["solo", "agency"] },
+        "youtubeChannelId": { "type": "string", "maxLength": 120 },
+        "tiktokHandle": { "type": "string", "maxLength": 80 },
+        "facebookPage": { "type": "string", "maxLength": 120 },
+        "spotifyArtistId": { "type": "string", "maxLength": 120 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "subscribers": { "type": "number" },
+        "monthlyViews": { "type": "number" },
+        "engagementRate": { "type": "number" },
+        "catalogValuationXAF": { "type": "number" },
+        "marketCapXAF": { "type": "number" },
+        "dividendsDisbursedXAF": { "type": "number" },
+        "isrcCount": { "type": "number" },
+        "wikiGrade": { "type": "string", "maxLength": 40 },
+        "payoutMomoNetwork": { "type": "string", "maxLength": 40 },
+        "isClaimed": { "type": "boolean" },
+        "claimedByUid": { "type": "string", "maxLength": 128 },
+        "bioVerificationCode": { "type": "string", "maxLength": 32 },
+        "kycStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+        "agencyName": { "type": "string", "maxLength": 100 },
+        "affiliatedAgencyId": { "type": "string", "maxLength": 128 },
+        "affiliatedAgencyUid": { "type": "string", "maxLength": 128 },
+        "rccmNumber": { "type": "string", "maxLength": 50 },
+        "niuNumber": { "type": "string", "maxLength": 50 },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "stageName", "category", "city", "country", "entityType", "isClaimed", "kycStatus", "isPublic", "createdAt", "updatedAt"]
+    },
+    "Race": {
+      "title": "Race",
+      "description": "Live AI-underwritten creator project fundraising round and tradable revenue-sharing asset.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "entityId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 140 },
+        "coverArtUrl": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 60 },
+        "monitorableSources": { "type": "array" },
+        "netBudgetXAF": { "type": "number" },
+        "grossTargetXAF": { "type": "number" },
+        "revSharePct": { "type": "number" },
+        "pctPerShare": { "type": "number" },
+        "roiDurationMonths": { "type": "number" },
+        "productionDeadline": { "type": "string", "maxLength": 40 },
+        "raceCloseDate": { "type": "string", "maxLength": 40 },
+        "unitSharePriceXAF": { "type": "number" },
+        "currentSharePriceXAF": { "type": "number" },
+        "totalShares": { "type": "number" },
+        "sharesSold": { "type": "number" },
+        "crippoScore": { "type": "number" },
+        "projectedRevenueXAF": { "type": "number" },
+        "regionalValuationNote": { "type": "string", "maxLength": 600 },
+        "valuationBreakdown": { "type": "object" },
+        "appliedCatalystIds": { "type": "array" },
+        "capTableHash": { "type": "string", "maxLength": 128 },
+        "clearingEmail": { "type": "string", "maxLength": 120 },
+        "isrcCode": { "type": "string", "maxLength": 40 },
+        "tranche1Released": { "type": "boolean" },
+        "tranche2Released": { "type": "boolean" },
+        "splitVerified": { "type": "boolean" },
+        "milestones": { "type": "array" },
+        "status": { "type": "string", "enum": ["auditing", "awaiting_creator_acceptance", "open", "closed", "clearing", "rejected"] },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "entityId", "creatorUid", "creatorName", "title", "category", "netBudgetXAF", "grossTargetXAF", "revSharePct", "roiDurationMonths", "productionDeadline", "raceCloseDate", "unitSharePriceXAF", "currentSharePriceXAF", "totalShares", "sharesSold", "crippoScore", "status", "isPublic", "createdAt", "updatedAt"]
+    },
+    "Trade": {
+      "title": "Trade",
+      "description": "Executed share purchase or sale order linked to a verified CamPay settlement.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "raceId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "raceTitle": { "type": "string", "maxLength": 140 },
+        "creatorName": { "type": "string", "maxLength": 100 },
+        "buyerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "anonymousId": { "type": "string", "maxLength": 32 },
+        "side": { "type": "string", "enum": ["BUY", "SELL"] },
+        "shares": { "type": "number" },
+        "pricePerShareXAF": { "type": "number" },
+        "totalAmountXAF": { "type": "number" },
+        "paymentReference": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["settled", "closed"] },
+        "isPublicOrderBook": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "raceId", "raceTitle", "creatorName", "buyerUid", "anonymousId", "side", "shares", "pricePerShareXAF", "totalAmountXAF", "paymentReference", "status", "isPublicOrderBook", "createdAt"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "CamPay Mobile Money collection or disbursement record in XAF.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["SHARE_PURCHASE", "MEMO_FEE", "BRAND_ESCROW", "ROYALTY_DISBURSEMENT"] },
+        "reference": { "type": "string", "maxLength": 128 },
+        "amountXAF": { "type": "number" },
+        "provider": { "type": "string", "enum": ["MTN", "ORANGE", "CAMPAY"] },
+        "status": { "type": "string", "enum": ["PENDING", "SUCCESSFUL", "FAILED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "type", "reference", "amountXAF", "provider", "status", "createdAt", "updatedAt"]
+    },
+    "Catalyst": {
+      "title": "Catalyst",
+      "description": "Unified social media and news catalyst item aggregated from TikTok, Facebook, YouTube, and Web.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "entityName": { "type": "string", "maxLength": 100 },
+        "segment": { "type": "string", "enum": ["Trending", "Entertainment", "Music", "Tech", "Local News"] },
+        "sourcePlatform": { "type": "string", "enum": ["TikTok", "Facebook", "YouTube", "Web"] },
+        "sourceName": { "type": "string", "maxLength": 100 },
+        "sourceUrl": { "type": "string", "maxLength": 500 },
+        "headline": { "type": "string", "maxLength": 200 },
+        "summary": { "type": "string", "maxLength": 600 },
+        "sentiment": { "type": "string", "enum": ["bullish", "neutral", "risk_alert"] },
+        "priceImpactPct": { "type": "number" },
+        "engagementCount": { "type": "number" },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "entityName", "segment", "sourcePlatform", "sourceName", "headline", "summary", "sentiment", "priceImpactPct", "isPublic", "createdAt"]
+    },
+    "Prediction": {
+      "title": "Prediction",
+      "description": "Live YES/NO Cultural Prediction market backed by real XAF volume.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "entityName": { "type": "string", "maxLength": 100 },
+        "topicCategory": { "type": "string", "maxLength": 40 },
+        "question": { "type": "string", "maxLength": 240 },
+        "coverArtUrl": { "type": "string", "maxLength": 500 },
+        "resolutionSource": { "type": "string", "maxLength": 140 },
+        "aiProbability": { "type": "number" },
+        "reasoning": { "type": "string", "maxLength": 400 },
+        "yesPriceXAF": { "type": "number" },
+        "noPriceXAF": { "type": "number" },
+        "yesVotes": { "type": "number" },
+        "noVotes": { "type": "number" },
+        "totalVolumeXAF": { "type": "number" },
+        "endsAt": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["open", "resolved_yes", "resolved_no"] },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "creatorUid", "entityName", "question", "yesPriceXAF", "noPriceXAF", "yesVotes", "noVotes", "totalVolumeXAF", "endsAt", "status", "isPublic", "createdAt"]
+    },
+    "Memo": {
+      "title": "Memo",
+      "description": "Paid listing request for an unlisted creator or agency audited by Gemini.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "requesterUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "stageName": { "type": "string", "maxLength": 100 },
+        "platformLink": { "type": "string", "maxLength": 500 },
+        "tier": { "type": "string", "enum": ["fan_2000", "fast_track_5000"] },
+        "feeXAF": { "type": "number" },
+        "paymentReference": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending_payment", "auditing", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "requesterUid", "stageName", "platformLink", "tier", "feeXAF", "status", "createdAt"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Brand partnership campaign funded via CamPay escrow.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 140 },
+        "niche": { "type": "string", "maxLength": 60 },
+        "city": { "type": "string", "maxLength": 40 },
+        "budgetXAF": { "type": "number" },
+        "brief": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["open", "funded_escrow", "completed"] },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "brandUid", "brandName", "title", "niche", "city", "budgetXAF", "brief", "status", "isPublic", "createdAt"]
+    },
+    "DividendPayout": {
+      "title": "DividendPayout",
+      "description": "Automated monthly royalty dividend distribution to a shareholder.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "raceId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "raceTitle": { "type": "string", "maxLength": 140 },
+        "recipientUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sharesHeld": { "type": "number" },
+        "payoutAmountXAF": { "type": "number" },
+        "periodLabel": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["disbursed", "pending"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "raceId", "raceTitle", "recipientUid", "sharesHeld", "payoutAmountXAF", "periodLabel", "status", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time user & creator notification (KYC decision, share-split Raise offer, affiliation request, dividend alert).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["kyc_approved", "kyc_rejected", "raise_offer", "raise_rejected", "affiliation_request", "memo_status", "dividend"] },
+        "title": { "type": "string", "maxLength": 140 },
+        "message": { "type": "string", "maxLength": 600 },
+        "raceId": { "type": "string", "maxLength": 128 },
+        "requestId": { "type": "string", "maxLength": 128 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "offerSummary": { "type": "object" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipientUid", "type", "title", "message", "read", "createdAt"]
+    },
+    "AffiliationRequest": {
+      "title": "AffiliationRequest",
+      "description": "Label or agency roster affiliation invitation sent to a creator.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "agencyUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "agencyEntityId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "agencyName": { "type": "string", "maxLength": 100 },
+        "creatorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorEntityId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorStageName": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 400 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "agencyUid", "agencyEntityId", "agencyName", "creatorUid", "creatorEntityId", "creatorStageName", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public, anonymized Crippo user profiles."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Private PII, MoMo phone number, and KYC identity records."
+    },
+    "/entities/{entityId}": {
+      "schema": { "$ref": "#/entities/Entity" },
+      "description": "Creator, agency, and record label market entities."
+    },
+    "/races/{raceId}": {
+      "schema": { "$ref": "#/entities/Race" },
+      "description": "AI-underwritten creator project fundraising Races."
+    },
+    "/trades/{tradeId}": {
+      "schema": { "$ref": "#/entities/Trade" },
+      "description": "Executed anonymized order book trades and user positions."
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "User CamPay Mobile Money transaction ledger."
+    },
+    "/catalysts/{catalystId}": {
+      "schema": { "$ref": "#/entities/Catalyst" },
+      "description": "Unified social and cultural pulse catalyst feed."
+    },
+    "/predictions/{predictionId}": {
+      "schema": { "$ref": "#/entities/Prediction" },
+      "description": "Live YES/NO cultural prediction markets."
+    },
+    "/memos/{memoId}": {
+      "schema": { "$ref": "#/entities/Memo" },
+      "description": "Paid creator listing memo requests."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/Campaign" },
+      "description": "Brand partnership campaigns with CamPay escrow."
+    },
+    "/dividend_payouts/{payoutId}": {
+      "schema": { "$ref": "#/entities/DividendPayout" },
+      "description": "Monthly royalty dividend clearing payouts."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Real-time notifications and Raise approval offers."
+    },
+    "/affiliation_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/AffiliationRequest" },
+      "description": "Label/agency roster affiliation requests to creators."
+    }
+  }
+}

@@ -1,0 +1,605 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'mangilerinelasliejr@gmail.com'
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUserPublic(data, userId) {
+      return data.keys().hasAll([
+        'uid', 'anonymousId', 'displayName', 'city', 'interests',
+        'onboardingComplete', 'creatorModeEnabled', 'kycStatus', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'anonymousId', 'displayName', 'city', 'interests',
+        'onboardingComplete', 'creatorModeEnabled', 'claimedEntityId', 'kycStatus',
+        'affiliationType', 'agencyName', 'createdAt', 'updatedAt'
+      ]) &&
+      data.uid == userId &&
+      data.anonymousId is string && data.anonymousId.size() >= 4 && data.anonymousId.size() <= 32 &&
+      data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+      data.city is string && data.city.size() >= 1 && data.city.size() <= 40 &&
+      data.interests is list && data.interests.size() <= 10 &&
+      (data.interests.size() == 0 || data.interests[0] is string) &&
+      data.onboardingComplete is bool &&
+      data.creatorModeEnabled is bool &&
+      data.kycStatus in ['none', 'pending', 'verified', 'rejected'] &&
+      (!('claimedEntityId' in data) || (data.claimedEntityId is string && data.claimedEntityId.size() <= 128)) &&
+      (!('affiliationType' in data) || data.affiliationType in ['solo', 'agency']) &&
+      (!('agencyName' in data) || (data.agencyName is string && data.agencyName.size() <= 100)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data, userId) {
+      return data.keys().hasAll(['uid', 'phone', 'momoProvider', 'createdAt', 'updatedAt']) &&
+      data.keys().hasOnly([
+        'uid', 'email', 'phone', 'momoProvider', 'fullNameLegal',
+        'cniNumber', 'niuNumber', 'cniFrontUrl', 'cniBackUrl', 'selfieUrl',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.uid == userId &&
+      data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20 &&
+      data.momoProvider in ['MTN', 'ORANGE', 'OTHER'] &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+      (!('fullNameLegal' in data) || (data.fullNameLegal is string && data.fullNameLegal.size() <= 120)) &&
+      (!('cniNumber' in data) || (data.cniNumber is string && data.cniNumber.size() <= 40)) &&
+      (!('niuNumber' in data) || (data.niuNumber is string && data.niuNumber.size() <= 40)) &&
+      (!('cniFrontUrl' in data) || (data.cniFrontUrl is string && data.cniFrontUrl.size() <= 500)) &&
+      (!('cniBackUrl' in data) || (data.cniBackUrl is string && data.cniBackUrl.size() <= 500)) &&
+      (!('selfieUrl' in data) || (data.selfieUrl is string && data.selfieUrl.size() <= 500)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidEntity(data, entityId) {
+      return data.keys().hasAll([
+        'id', 'stageName', 'category', 'city', 'country',
+        'entityType', 'isClaimed', 'kycStatus', 'isPublic', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'stageName', 'legalFullName', 'category', 'city', 'country', 'entityType',
+        'youtubeChannelId', 'tiktokHandle', 'facebookPage', 'spotifyArtistId',
+        'avatarUrl', 'subscribers', 'monthlyViews', 'engagementRate',
+        'catalogValuationXAF', 'marketCapXAF', 'dividendsDisbursedXAF', 'isrcCount',
+        'wikiGrade', 'payoutMomoNetwork',
+        'isClaimed', 'claimedByUid', 'bioVerificationCode', 'kycStatus',
+        'agencyName', 'rccmNumber', 'niuNumber', 'isPublic', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == entityId &&
+      data.stageName is string && data.stageName.size() >= 1 && data.stageName.size() <= 100 &&
+      data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+      data.city is string && data.city.size() >= 1 && data.city.size() <= 40 &&
+      data.country is string && data.country.size() >= 1 && data.country.size() <= 40 &&
+      data.entityType in ['solo', 'agency'] &&
+      data.isClaimed is bool &&
+      data.kycStatus in ['unverified', 'pending', 'verified', 'rejected'] &&
+      data.isPublic is bool &&
+      (!('legalFullName' in data) || (data.legalFullName is string && data.legalFullName.size() <= 120)) &&
+      (!('youtubeChannelId' in data) || (data.youtubeChannelId is string && data.youtubeChannelId.size() <= 120)) &&
+      (!('tiktokHandle' in data) || (data.tiktokHandle is string && data.tiktokHandle.size() <= 80)) &&
+      (!('facebookPage' in data) || (data.facebookPage is string && data.facebookPage.size() <= 120)) &&
+      (!('spotifyArtistId' in data) || (data.spotifyArtistId is string && data.spotifyArtistId.size() <= 120)) &&
+      (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+      (!('subscribers' in data) || (data.subscribers is number && data.subscribers >= 0)) &&
+      (!('monthlyViews' in data) || (data.monthlyViews is number && data.monthlyViews >= 0)) &&
+      (!('engagementRate' in data) || (data.engagementRate is number && data.engagementRate >= 0)) &&
+      (!('catalogValuationXAF' in data) || (data.catalogValuationXAF is number && data.catalogValuationXAF >= 0)) &&
+      (!('marketCapXAF' in data) || (data.marketCapXAF is number && data.marketCapXAF >= 0)) &&
+      (!('dividendsDisbursedXAF' in data) || (data.dividendsDisbursedXAF is number && data.dividendsDisbursedXAF >= 0)) &&
+      (!('isrcCount' in data) || (data.isrcCount is number && data.isrcCount >= 0)) &&
+      (!('wikiGrade' in data) || (data.wikiGrade is string && data.wikiGrade.size() <= 40)) &&
+      (!('payoutMomoNetwork' in data) || (data.payoutMomoNetwork is string && data.payoutMomoNetwork.size() <= 40)) &&
+      (!('claimedByUid' in data) || (data.claimedByUid is string && data.claimedByUid.size() <= 128)) &&
+      (!('bioVerificationCode' in data) || (data.bioVerificationCode is string && data.bioVerificationCode.size() <= 32)) &&
+      (!('agencyName' in data) || (data.agencyName is string && data.agencyName.size() <= 100)) &&
+      (!('rccmNumber' in data) || (data.rccmNumber is string && data.rccmNumber.size() <= 50)) &&
+      (!('niuNumber' in data) || (data.niuNumber is string && data.niuNumber.size() <= 50)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidRace(data, raceId) {
+      return data.keys().hasAll([
+        'id', 'entityId', 'creatorUid', 'creatorName', 'title', 'category',
+        'monitorableSources', 'netBudgetXAF', 'grossTargetXAF', 'revSharePct',
+        'roiDurationMonths', 'productionDeadline', 'raceCloseDate',
+        'unitSharePriceXAF', 'currentSharePriceXAF', 'totalShares', 'sharesSold',
+        'crippoScore', 'status', 'isPublic', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'entityId', 'creatorUid', 'creatorName', 'title', 'coverArtUrl',
+        'category', 'monitorableSources', 'netBudgetXAF', 'grossTargetXAF',
+        'revSharePct', 'roiDurationMonths', 'productionDeadline', 'raceCloseDate',
+        'unitSharePriceXAF', 'currentSharePriceXAF', 'totalShares', 'sharesSold',
+        'crippoScore', 'scoreBreakdown', 'projectedRevenueXAF', 'capTableHash',
+        'clearingEmail', 'isrcCode', 'tranche1Released', 'tranche2Released',
+        'splitVerified', 'milestones', 'status', 'legalDetails', 'priceHistory',
+        'rejectionReason', 'isPublic', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == raceId &&
+      isValidId(data.entityId) &&
+      isValidId(data.creatorUid) &&
+      data.creatorName is string && data.creatorName.size() >= 1 && data.creatorName.size() <= 100 &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 140 &&
+      data.category is string && data.category.size() >= 2 && data.category.size() <= 60 &&
+      data.monitorableSources is list && data.monitorableSources.size() >= 1 && data.monitorableSources.size() <= 10 &&
+      data.monitorableSources[0] is string &&
+      data.netBudgetXAF is number && data.netBudgetXAF > 0 &&
+      data.grossTargetXAF is number && data.grossTargetXAF >= data.netBudgetXAF &&
+      data.revSharePct is number && data.revSharePct > 0 && data.revSharePct <= 90 &&
+      data.roiDurationMonths is number && data.roiDurationMonths in [6, 12, 18, 24] &&
+      data.productionDeadline is string && data.productionDeadline.size() <= 40 &&
+      data.raceCloseDate is string && data.raceCloseDate.size() <= 40 &&
+      data.unitSharePriceXAF is number && data.unitSharePriceXAF > 0 &&
+      data.currentSharePriceXAF is number && data.currentSharePriceXAF > 0 &&
+      data.totalShares is number && data.totalShares >= 1 &&
+      data.sharesSold is number && data.sharesSold >= 0 && data.sharesSold <= data.totalShares &&
+      data.crippoScore is number && data.crippoScore >= 0 && data.crippoScore <= 100 &&
+      data.status in ['auditing', 'open', 'closed', 'clearing', 'rejected'] &&
+      data.isPublic is bool &&
+      (!('coverArtUrl' in data) || (data.coverArtUrl is string && data.coverArtUrl.size() <= 500)) &&
+      (!('projectedRevenueXAF' in data) || (data.projectedRevenueXAF is number && data.projectedRevenueXAF >= 0)) &&
+      (!('capTableHash' in data) || (data.capTableHash is string && data.capTableHash.size() <= 128)) &&
+      (!('clearingEmail' in data) || (data.clearingEmail is string && data.clearingEmail.size() <= 120)) &&
+      (!('isrcCode' in data) || (data.isrcCode is string && data.isrcCode.size() <= 40)) &&
+      (!('tranche1Released' in data) || data.tranche1Released is bool) &&
+      (!('tranche2Released' in data) || data.tranche2Released is bool) &&
+      (!('splitVerified' in data) || data.splitVerified is bool) &&
+      (!('milestones' in data) || (data.milestones is list && data.milestones.size() <= 8)) &&
+      (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 600)) &&
+      (!('scoreBreakdown' in data) || data.scoreBreakdown is map) &&
+      (!('legalDetails' in data) || data.legalDetails is map) &&
+      (!('priceHistory' in data) || (data.priceHistory is list && data.priceHistory.size() <= 200)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTrade(data, tradeId) {
+      return data.keys().hasAll([
+        'id', 'raceId', 'raceTitle', 'creatorName', 'buyerUid', 'anonymousId',
+        'side', 'shares', 'pricePerShareXAF', 'totalAmountXAF',
+        'paymentReference', 'status', 'isPublicOrderBook', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'raceId', 'raceTitle', 'creatorName', 'buyerUid', 'anonymousId',
+        'side', 'shares', 'pricePerShareXAF', 'totalAmountXAF',
+        'paymentReference', 'status', 'isPublicOrderBook', 'createdAt'
+      ]) &&
+      data.id == tradeId &&
+      isValidId(data.raceId) &&
+      data.raceTitle is string && data.raceTitle.size() >= 1 && data.raceTitle.size() <= 140 &&
+      data.creatorName is string && data.creatorName.size() >= 1 && data.creatorName.size() <= 100 &&
+      data.buyerUid == request.auth.uid &&
+      data.anonymousId is string && data.anonymousId.size() >= 3 && data.anonymousId.size() <= 32 &&
+      data.side in ['BUY', 'SELL'] &&
+      data.shares is number && data.shares > 0 && data.shares <= 100000 &&
+      data.pricePerShareXAF is number && data.pricePerShareXAF > 0 &&
+      data.totalAmountXAF is number && data.totalAmountXAF > 0 &&
+      data.paymentReference is string && data.paymentReference.size() >= 3 && data.paymentReference.size() <= 128 &&
+      data.status in ['settled', 'closed'] &&
+      data.isPublicOrderBook is bool &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidPayment(data, paymentId) {
+      return data.keys().hasAll([
+        'id', 'uid', 'type', 'reference', 'amountXAF', 'provider', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'uid', 'type', 'reference', 'amountXAF', 'provider', 'status',
+        'raceId', 'memoId', 'campaignId', 'createdAt', 'updatedAt'
+      ]) &&
+      data.id == paymentId &&
+      data.uid == request.auth.uid &&
+      data.type in ['SHARE_PURCHASE', 'MEMO_FEE', 'BRAND_ESCROW', 'ROYALTY_DISBURSEMENT'] &&
+      data.reference is string && data.reference.size() >= 3 && data.reference.size() <= 128 &&
+      data.amountXAF is number && data.amountXAF > 0 &&
+      data.provider in ['MTN', 'ORANGE', 'CAMPAY'] &&
+      data.status in ['PENDING', 'SUCCESSFUL', 'FAILED'] &&
+      (!('raceId' in data) || (data.raceId is string && data.raceId.size() <= 128)) &&
+      (!('memoId' in data) || (data.memoId is string && data.memoId.size() <= 128)) &&
+      (!('campaignId' in data) || (data.campaignId is string && data.campaignId.size() <= 128)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCatalyst(data, catalystId) {
+      return data.keys().hasAll([
+        'id', 'entityName', 'segment', 'sourcePlatform', 'sourceName',
+        'headline', 'summary', 'sentiment', 'priceImpactPct', 'isPublic', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'entityId', 'entityName', 'raceId', 'segment', 'sourcePlatform',
+        'sourceName', 'sourceUrl', 'headline', 'summary', 'sentiment',
+        'priceImpactPct', 'engagementCount', 'publishedAt', 'isPublic', 'createdAt'
+      ]) &&
+      data.id == catalystId &&
+      data.entityName is string && data.entityName.size() >= 1 && data.entityName.size() <= 100 &&
+      data.segment in ['Trending', 'Entertainment', 'Music', 'Tech', 'Local News'] &&
+      data.sourcePlatform in ['TikTok', 'Facebook', 'YouTube', 'Web'] &&
+      data.sourceName is string && data.sourceName.size() >= 1 && data.sourceName.size() <= 100 &&
+      data.headline is string && data.headline.size() >= 2 && data.headline.size() <= 200 &&
+      data.summary is string && data.summary.size() >= 2 && data.summary.size() <= 600 &&
+      data.sentiment in ['bullish', 'neutral', 'risk_alert'] &&
+      data.priceImpactPct is number && data.priceImpactPct >= -50 && data.priceImpactPct <= 50 &&
+      data.isPublic is bool &&
+      (!('entityId' in data) || (data.entityId is string && data.entityId.size() <= 128)) &&
+      (!('raceId' in data) || (data.raceId is string && data.raceId.size() <= 128)) &&
+      (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 500)) &&
+      (!('engagementCount' in data) || (data.engagementCount is number && data.engagementCount >= 0)) &&
+      (!('publishedAt' in data) || (data.publishedAt is string && data.publishedAt.size() <= 40)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidPrediction(data, predictionId) {
+      return data.keys().hasAll([
+        'id', 'creatorUid', 'entityName', 'question', 'yesPriceXAF', 'noPriceXAF',
+        'yesVotes', 'noVotes', 'totalVolumeXAF', 'endsAt', 'status', 'isPublic', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'creatorUid', 'entityName', 'question', 'coverArtUrl', 'yesPriceXAF', 'noPriceXAF',
+        'yesVotes', 'noVotes', 'totalVolumeXAF', 'endsAt', 'status', 'isPublic', 'createdAt'
+      ]) &&
+      data.id == predictionId &&
+      isValidId(data.creatorUid) &&
+      data.entityName is string && data.entityName.size() >= 1 && data.entityName.size() <= 100 &&
+      data.question is string && data.question.size() >= 5 && data.question.size() <= 240 &&
+      data.yesPriceXAF is number && data.yesPriceXAF >= 1 && data.yesPriceXAF <= 99 &&
+      data.noPriceXAF is number && data.noPriceXAF >= 1 && data.noPriceXAF <= 99 &&
+      data.yesVotes is number && data.yesVotes >= 0 &&
+      data.noVotes is number && data.noVotes >= 0 &&
+      data.totalVolumeXAF is number && data.totalVolumeXAF >= 0 &&
+      data.endsAt is string && data.endsAt.size() <= 40 &&
+      data.status in ['open', 'resolved_yes', 'resolved_no'] &&
+      data.isPublic is bool &&
+      (!('coverArtUrl' in data) || (data.coverArtUrl is string && data.coverArtUrl.size() <= 500)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidMemo(data, memoId) {
+      return data.keys().hasAll([
+        'id', 'requesterUid', 'stageName', 'platformLink', 'tier', 'feeXAF', 'status', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'requesterUid', 'stageName', 'platformLink', 'tier', 'feeXAF',
+        'paymentReference', 'auditSummary', 'status', 'createdAt'
+      ]) &&
+      data.id == memoId &&
+      data.requesterUid == request.auth.uid &&
+      data.stageName is string && data.stageName.size() >= 1 && data.stageName.size() <= 100 &&
+      data.platformLink is string && data.platformLink.size() >= 5 && data.platformLink.size() <= 500 &&
+      data.tier in ['fan_2000', 'fast_track_5000'] &&
+      data.feeXAF is number && data.feeXAF in [2000, 5000] &&
+      data.status in ['pending_payment', 'auditing', 'approved', 'rejected'] &&
+      (!('paymentReference' in data) || (data.paymentReference is string && data.paymentReference.size() <= 128)) &&
+      (!('auditSummary' in data) || (data.auditSummary is string && data.auditSummary.size() <= 600)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidCampaign(data, campaignId) {
+      return data.keys().hasAll([
+        'id', 'brandUid', 'brandName', 'title', 'niche', 'city',
+        'budgetXAF', 'brief', 'status', 'isPublic', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'brandUid', 'brandName', 'title', 'niche', 'city', 'budgetXAF',
+        'commissionPct', 'brief', 'applicantEntityIds', 'selectedEntityId',
+        'escrowPaymentRef', 'status', 'isPublic', 'createdAt'
+      ]) &&
+      data.id == campaignId &&
+      isValidId(data.brandUid) &&
+      data.brandName is string && data.brandName.size() >= 1 && data.brandName.size() <= 100 &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 140 &&
+      data.niche is string && data.niche.size() >= 2 && data.niche.size() <= 60 &&
+      data.city is string && data.city.size() >= 2 && data.city.size() <= 40 &&
+      data.budgetXAF is number && data.budgetXAF >= 10000 &&
+      data.brief is string && data.brief.size() >= 10 && data.brief.size() <= 1000 &&
+      data.status in ['open', 'funded_escrow', 'completed'] &&
+      data.isPublic is bool &&
+      (!('commissionPct' in data) || (data.commissionPct is number && data.commissionPct == 8)) &&
+      (!('applicantEntityIds' in data) || (data.applicantEntityIds is list && data.applicantEntityIds.size() <= 100 && (data.applicantEntityIds.size() == 0 || data.applicantEntityIds[0] is string))) &&
+      (!('selectedEntityId' in data) || (data.selectedEntityId is string && data.selectedEntityId.size() <= 128)) &&
+      (!('escrowPaymentRef' in data) || (data.escrowPaymentRef is string && data.escrowPaymentRef.size() <= 128)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidDividendPayout(data, payoutId) {
+      return data.keys().hasAll([
+        'id', 'raceId', 'raceTitle', 'recipientUid', 'sharesHeld',
+        'payoutAmountXAF', 'periodLabel', 'status', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'raceId', 'raceTitle', 'recipientUid', 'recipientAnonymousId',
+        'sharesHeld', 'clearedPoolXAF', 'payoutAmountXAF', 'momoReference',
+        'periodLabel', 'status', 'createdAt'
+      ]) &&
+      data.id == payoutId &&
+      isValidId(data.raceId) &&
+      data.raceTitle is string && data.raceTitle.size() >= 1 && data.raceTitle.size() <= 140 &&
+      isValidId(data.recipientUid) &&
+      data.sharesHeld is number && data.sharesHeld > 0 &&
+      data.payoutAmountXAF is number && data.payoutAmountXAF > 0 &&
+      data.periodLabel is string && data.periodLabel.size() >= 2 && data.periodLabel.size() <= 40 &&
+      data.status in ['disbursed', 'pending'] &&
+      data.createdAt is timestamp;
+    }
+
+    // Connection check doc
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // Users public profile (no PII)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
+      allow create: if isValidId(userId) && isVerifiedUser() && isOwner(userId) &&
+        isValidUserPublic(incoming(), userId) &&
+        incoming().kycStatus == 'none' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isVerifiedUser() &&
+        isValidUserPublic(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (isOwner(userId) &&
+           incoming().diff(existing()).affectedKeys().hasOnly([
+             'displayName', 'city', 'interests', 'onboardingComplete',
+             'creatorModeEnabled', 'claimedEntityId', 'kycStatus', 'affiliationType', 'agencyName', 'updatedAt'
+           ]))
+        );
+      allow delete: if false;
+
+      // Isolated PII subcollection
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+        allow list: if isOwner(userId) && existing().uid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(docId) && isVerifiedUser() && isOwner(userId) &&
+          isValidUserPrivate(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(docId) && isVerifiedUser() && isOwner(userId) &&
+          isValidUserPrivate(incoming(), userId) &&
+          incoming().uid == existing().uid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'email', 'phone', 'momoProvider', 'fullNameLegal',
+            'cniNumber', 'niuNumber', 'cniFrontUrl', 'cniBackUrl', 'selfieUrl', 'updatedAt'
+          ]);
+        allow delete: if false;
+      }
+    }
+
+    // Creator & agency entities
+    match /entities/{entityId} {
+      allow get: if isValidId(entityId) && (existing().isPublic == true || isAdmin());
+      allow list: if existing().isPublic == true || isAdmin();
+      allow create: if isValidId(entityId) && isVerifiedUser() &&
+        isValidEntity(incoming(), entityId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (isAdmin() || (incoming().isClaimed == false && incoming().kycStatus == 'unverified') || incoming().claimedByUid == request.auth.uid);
+      allow update: if isValidId(entityId) && isVerifiedUser() &&
+        isValidEntity(incoming(), entityId) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (existing().isClaimed == false &&
+           incoming().claimedByUid == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly([
+             'isClaimed', 'claimedByUid', 'bioVerificationCode', 'kycStatus',
+             'entityType', 'agencyName', 'rccmNumber', 'niuNumber', 'legalFullName', 'updatedAt'
+           ])) ||
+          (existing().claimedByUid == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly([
+             'entityType', 'agencyName', 'rccmNumber', 'niuNumber', 'kycStatus',
+             'legalFullName', 'subscribers', 'monthlyViews', 'engagementRate', 'updatedAt'
+           ]))
+        );
+      allow delete: if isValidId(entityId) && isAdmin();
+    }
+
+    // Races
+    match /races/{raceId} {
+      allow get: if isValidId(raceId) && (existing().isPublic == true || existing().creatorUid == request.auth.uid || isAdmin());
+      allow list: if existing().isPublic == true || isAdmin() || (isSignedIn() && existing().creatorUid == request.auth.uid);
+      allow create: if isValidId(raceId) && isVerifiedUser() &&
+        isValidRace(incoming(), raceId) &&
+        incoming().creatorUid == request.auth.uid &&
+        incoming().sharesSold == 0 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(raceId) && isVerifiedUser() &&
+        isValidRace(incoming(), raceId) &&
+        incoming().id == existing().id &&
+        incoming().creatorUid == existing().creatorUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (existing().status != 'rejected' &&
+           incoming().netBudgetXAF == existing().netBudgetXAF &&
+           incoming().revSharePct == existing().revSharePct &&
+           incoming().totalShares == existing().totalShares && (
+             (existing().creatorUid == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'isrcCode', 'tranche1Released', 'tranche2Released', 'splitVerified', 'milestones', 'status', 'updatedAt'
+              ])) ||
+             (incoming().diff(existing()).affectedKeys().hasOnly([
+               'sharesSold', 'currentSharePriceXAF', 'priceHistory', 'status', 'updatedAt'
+             ]))
+           ))
+        );
+      allow delete: if false;
+    }
+
+    // Trades (user positions & anonymized public order book)
+    match /trades/{tradeId} {
+      allow get: if isValidId(tradeId) && isSignedIn() && (existing().buyerUid == request.auth.uid || existing().isPublicOrderBook == true || isAdmin());
+      allow list: if isSignedIn() && (existing().buyerUid == request.auth.uid || existing().isPublicOrderBook == true || isAdmin());
+      allow create: if isValidId(tradeId) && isVerifiedUser() &&
+        isValidTrade(incoming(), tradeId) &&
+        exists(/databases/$(database)/documents/races/$(incoming().raceId)) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(tradeId) && isVerifiedUser() &&
+        isValidTrade(incoming(), tradeId) &&
+        incoming().id == existing().id &&
+        incoming().raceId == existing().raceId &&
+        incoming().buyerUid == existing().buyerUid &&
+        incoming().shares == existing().shares &&
+        incoming().totalAmountXAF == existing().totalAmountXAF &&
+        incoming().createdAt == existing().createdAt &&
+        existing().status != 'closed' && (
+          isAdmin() ||
+          (existing().buyerUid == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+        );
+      allow delete: if false;
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
+      allow create: if isValidId(paymentId) && isVerifiedUser() &&
+        isValidPayment(incoming(), paymentId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(paymentId) && isVerifiedUser() &&
+        isValidPayment(incoming(), paymentId) &&
+        incoming().id == existing().id &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        existing().status == 'PENDING' && (
+          isAdmin() ||
+          (existing().uid == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // Unified social catalysts
+    match /catalysts/{catalystId} {
+      allow get: if isValidId(catalystId) && existing().isPublic == true;
+      allow list: if existing().isPublic == true;
+      allow create: if isValidId(catalystId) && isVerifiedUser() &&
+        isValidCatalyst(incoming(), catalystId) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(catalystId) && isAdmin() && isValidCatalyst(incoming(), catalystId);
+      allow delete: if isValidId(catalystId) && isAdmin();
+    }
+
+    // Cultural Predictions
+    match /predictions/{predictionId} {
+      allow get: if isValidId(predictionId) && (existing().isPublic == true || isAdmin());
+      allow list: if existing().isPublic == true || isAdmin();
+      allow create: if isValidId(predictionId) && isVerifiedUser() &&
+        isValidPrediction(incoming(), predictionId) &&
+        incoming().creatorUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(predictionId) && isVerifiedUser() &&
+        isValidPrediction(incoming(), predictionId) &&
+        incoming().id == existing().id &&
+        incoming().creatorUid == existing().creatorUid &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['yesVotes', 'noVotes', 'yesPriceXAF', 'noPriceXAF', 'totalVolumeXAF'])
+        );
+      allow delete: if isValidId(predictionId) && isAdmin();
+    }
+
+    // Paid Memo requests
+    match /memos/{memoId} {
+      allow get: if isValidId(memoId) && isSignedIn() && (existing().requesterUid == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && existing().requesterUid == request.auth.uid);
+      allow create: if isValidId(memoId) && isVerifiedUser() &&
+        isValidMemo(incoming(), memoId) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(memoId) && isVerifiedUser() &&
+        isValidMemo(incoming(), memoId) &&
+        incoming().id == existing().id &&
+        incoming().requesterUid == existing().requesterUid &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (existing().requesterUid == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'auditSummary', 'paymentReference']))
+        );
+      allow delete: if false;
+    }
+
+    // Brand campaigns
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId) && existing().isPublic == true;
+      allow list: if existing().isPublic == true;
+      allow create: if isValidId(campaignId) && isVerifiedUser() &&
+        isValidCampaign(incoming(), campaignId) &&
+        incoming().brandUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(campaignId) && isVerifiedUser() &&
+        isValidCampaign(incoming(), campaignId) &&
+        incoming().id == existing().id &&
+        incoming().brandUid == existing().brandUid &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (existing().brandUid == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly(['selectedEntityId', 'escrowPaymentRef', 'status'])) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['applicantEntityIds']))
+        );
+      allow delete: if isValidId(campaignId) && isAdmin();
+    }
+
+    // Royalty Dividend Payouts
+    match /dividend_payouts/{payoutId} {
+      allow get: if isValidId(payoutId) && isSignedIn() && (existing().recipientUid == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (isSignedIn() && existing().recipientUid == request.auth.uid);
+      allow create: if isValidId(payoutId) && isVerifiedUser() &&
+        isValidDividendPayout(incoming(), payoutId) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(payoutId) && isAdmin() && isValidDividendPayout(incoming(), payoutId);
+      allow delete: if false;
+    }
+
+    // Admin registry
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && isOwner(adminId);
+      allow list, create, update, delete: if false;
+    }
+  }
+}
