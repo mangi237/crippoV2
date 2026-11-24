@@ -88,37 +88,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return location.pathname.startsWith(clean);
   };
 
-  // Horizontal breaking-news scrolling ticker populated with trending news, market movers, and share price changes
+  // Horizontal stock-style scrolling ticker showing live project share price increases/decreases and trending movers
   const tickerEntries: Array<{
     key: string;
-    type: 'race' | 'news';
+    type: 'race' | 'mover';
     label: string;
     value: string;
     positive: boolean;
     to: string;
   }> = [
-    ...races.slice(0, 10).map((r) => {
+    ...races.slice(0, 12).map((r) => {
       const delta =
         r.unitSharePriceXAF > 0
           ? Number((((r.currentSharePriceXAF - r.unitSharePriceXAF) / r.unitSharePriceXAF) * 100).toFixed(1))
           : 0;
+      const arrow = delta >= 0 ? '▲' : '▼';
       return {
         key: `r_${r.id}`,
         type: 'race' as const,
         label: `${r.creatorName.toUpperCase()} · ${r.title.slice(0, 26)}`,
-        value: `${r.currentSharePriceXAF.toLocaleString()} XAF (${delta >= 0 ? '+' : ''}${delta}%)`,
+        value: `${r.currentSharePriceXAF.toLocaleString()} XAF ${arrow} ${delta >= 0 ? '+' : ''}${delta}%`,
         positive: delta >= 0,
         to: `/race/${r.id}`,
       };
     }),
-    ...catalysts.slice(0, 10).map((c) => ({
-      key: `c_${c.id}`,
-      type: 'news' as const,
-      label: `NEWS · ${c.headline.slice(0, 64)}`,
-      value: `${c.priceImpactPct >= 0 ? '+' : ''}${c.priceImpactPct}%`,
-      positive: c.sentiment !== 'risk_alert',
-      to: '/',
-    })),
+    ...catalysts.slice(0, 10).map((c) => {
+      const impact = Number(c.priceImpactPct || 0);
+      const positive = c.sentiment !== 'risk_alert' && impact >= 0;
+      const arrow = positive ? '▲' : '▼';
+      return {
+        key: `c_${c.id}`,
+        type: 'mover' as const,
+        label: `${c.entityName.toUpperCase()} · ${c.headline.slice(0, 42)}`,
+        value: `${arrow} ${impact >= 0 ? '+' : ''}${impact}%`,
+        positive,
+        to: '/',
+      };
+    }),
   ];
 
   const totalNotifBadge = unreadNotifCount;
@@ -508,12 +514,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ================= MAIN CONTENT VIEWPORT ================= */}
       <div className="lg:pl-64 flex-1 flex flex-col bg-surface">
-        {/* Horizontal News Updates Ticker Crawl */}
+        {/* Horizontal Stock-Style Project Price Ticker Crawl */}
         <div className="pt-14 lg:pt-[6.5rem]">
           <div className="w-full h-9 bg-primary-container text-white border-b border-outline-variant/40 overflow-hidden flex items-center">
-            <span className="px-3.5 h-full bg-secondary text-white font-label-xs uppercase font-bold flex items-center shrink-0 tracking-wider">
-              {lang === 'fr' ? 'Actualités' : 'News Updates'}
-            </span>
             <div className="flex-1 overflow-hidden">
               {tickerEntries.length > 0 ? (
                 <div className="animate-ticker flex items-center gap-6 px-4">
@@ -523,7 +526,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       to={item.to}
                       className="inline-flex items-center gap-2 text-[11px] font-mono-num whitespace-nowrap hover:underline tabular-nums"
                     >
-                      <span className={item.type === 'news' ? 'text-secondary-fixed font-semibold' : 'text-white font-semibold'}>
+                      <span className={item.type === 'mover' ? 'text-secondary-fixed font-semibold' : 'text-white font-semibold'}>
                         {item.label}
                       </span>
                       <span className={item.positive ? 'text-[#34D399] font-bold' : 'text-[#F87171] font-bold'}>
@@ -534,12 +537,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   ))}
                 </div>
               ) : (
-                <div className="animate-ticker flex items-center gap-6 px-4 text-[11px] font-mono-num text-white/85 whitespace-nowrap">
-                  <span>GROW WITH THE CREATORS YOU LOVE</span>
+                <div className="animate-ticker flex items-center gap-6 px-4 text-[11px] font-mono-num text-white/85 whitespace-nowrap tabular-nums">
+                  <span>CRIPPO SHARE MARKET · LIVE PROJECT PRICING</span>
                   <span className="text-white/30">|</span>
-                  <span>MTN MOMO &amp; ORANGE MONEY ESCROW CLEARING</span>
+                  <span>XAF CREATOR EQUITIES · DOUALA · YAOUNDE · BUEA</span>
                   <span className="text-white/30">|</span>
-                  <span>DOUALA · YAOUNDE · BUEA</span>
+                  <span>MTN MOMO &amp; ORANGE MONEY CLEARING</span>
                 </div>
               )}
             </div>
