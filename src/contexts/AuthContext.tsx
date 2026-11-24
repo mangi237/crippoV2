@@ -73,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      setLoading(true);
       const publicPath = `users/${fbUser.uid}`;
       const privatePath = `users/${fbUser.uid}/private/info`;
 

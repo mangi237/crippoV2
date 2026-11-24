@@ -18,28 +18,12 @@ import { LaunchRace } from './pages/LaunchRace';
 import { BrandsHub } from './pages/BrandsHub';
 import { AdminDesk } from './pages/AdminDesk';
 
-const GUEST_ONBOARDED_KEY = 'crippo_guest_onboarded';
-
 function OnboardingGate({
   children,
-  skipFirstVisitRedirect = false,
 }: {
   children: React.ReactNode;
   skipFirstVisitRedirect?: boolean;
 }) {
-  const { user, profile, loading } = useAuth();
-  if (!loading && user && (!profile || !profile.onboardingComplete)) {
-    return <Navigate to="/auth" replace />;
-  }
-  if (
-    !loading &&
-    !user &&
-    !skipFirstVisitRedirect &&
-    typeof window !== 'undefined' &&
-    localStorage.getItem(GUEST_ONBOARDED_KEY) !== '1'
-  ) {
-    return <Navigate to="/onboarding" replace />;
-  }
   return <>{children}</>;
 }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { useAuth, detectMomoProvider } from '../contexts/AuthContext';
@@ -23,6 +23,7 @@ export function AuthOnboarding() {
     emailVerified,
     profile,
     privateInfo,
+    loading,
     signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
@@ -31,12 +32,18 @@ export function AuthOnboarding() {
   } = useAuth();
   const { showToast } = useMarket();
   const { lang } = useLanguage();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const rawReturnTo = searchParams.get('returnTo');
   const returnTo = rawReturnTo && rawReturnTo.startsWith('/') ? rawReturnTo : '/';
-  const skipSplash = searchParams.get('skipSplash') === '1' || searchParams.get('mode') === 'login' || searchParams.get('mode') === 'signup';
+  const isOnboardingRoute = location.pathname === '/onboarding';
+  const skipSplash =
+    !isOnboardingRoute ||
+    searchParams.get('skipSplash') === '1' ||
+    searchParams.get('mode') === 'login' ||
+    searchParams.get('mode') === 'signup';
   const requestedMode = searchParams.get('mode') === 'signup' ? 'signup' : 'login';
 
   const [showSplash, setShowSplash] = useState<boolean>(!user && !skipSplash);
@@ -63,7 +70,8 @@ export function AuthOnboarding() {
   );
 
   useEffect(() => {
-    if (user && profile?.onboardingComplete) {
+    if (loading) return;
+    if (user && (profile?.onboardingComplete || authMode === 'login')) {
       navigate(returnTo, { replace: true });
       return;
     }
@@ -74,7 +82,7 @@ export function AuthOnboarding() {
     } else {
       setStep(1);
     }
-  }, [user, profile?.onboardingComplete, displayName, navigate, returnTo]);
+  }, [user, profile?.onboardingComplete, loading, authMode, displayName, navigate, returnTo]);
 
   useEffect(() => {
     if (profile?.displayName) setDisplayName(profile.displayName);
@@ -125,8 +133,11 @@ export function AuthOnboarding() {
       await signInWithGoogle();
       showToast(
         lang === 'fr' ? 'Connecté' : 'Signed In',
-        lang === 'fr' ? 'Confirmez votre ligne Mobile Money.' : 'Confirm your Mobile Money line to finish setup.'
+        lang === 'fr' ? 'Bienvenue sur Crippo.' : 'Welcome to Crippo.'
       );
+      if (authMode === 'login') {
+        navigate(returnTo, { replace: true });
+      }
     } catch (err: unknown) {
       setErrorMsg(formatFirebaseAuthError(err));
     } finally {
@@ -150,6 +161,11 @@ export function AuthOnboarding() {
     try {
       if (authMode === 'login') {
         await signInWithEmail(email.trim(), password);
+        showToast(
+          lang === 'fr' ? 'Connecté' : 'Signed In',
+          email.trim()
+        );
+        navigate(returnTo, { replace: true });
       } else {
         await signUpWithEmail(email.trim(), password);
         setInfoMsg(
@@ -688,17 +704,26 @@ export function AuthOnboarding() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full py-3.5 rounded-xl bg-on-tertiary-container text-white font-headline-sm text-[14px] sm:text-[15px] font-bold uppercase tracking-wider shadow-sm hover:opacity-95 transition-opacity disabled:opacity-60"
-              >
-                {busy
-                  ? '...'
-                  : lang === 'fr'
-                  ? 'Enregistrer & Entrer'
-                  : 'Save & Enter Crippo'}
-              </button>
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full py-3.5 rounded-xl bg-on-tertiary-container text-white font-headline-sm text-[14px] sm:text-[15px] font-bold uppercase tracking-wider shadow-sm hover:opacity-95 transition-opacity disabled:opacity-60"
+                >
+                  {busy
+                    ? '...'
+                    : lang === 'fr'
+                    ? 'Enregistrer & Entrer'
+                    : 'Save & Enter Crippo'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(returnTo, { replace: true })}
+                  className="w-full py-2.5 rounded-xl border border-outline-variant/40 text-on-surface-variant hover:text-on-surface font-label-md font-semibold transition-colors"
+                >
+                  {lang === 'fr' ? 'Ignorer pour le moment' : 'Skip for now — Go to Home'}
+                </button>
+              </div>
             </form>
           </div>
         )}

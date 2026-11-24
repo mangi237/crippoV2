@@ -88,7 +88,7 @@ export function UserProfile() {
     return `CRIPPO-${suffix}`;
   }, [claimedEntity, user?.uid]);
 
-  if (!user || !profile) {
+  if (!user) {
     return (
       <div className="max-w-xl mx-auto py-12 text-center flex flex-col items-center gap-4">
         <div className="w-12 h-12 rounded-lg bg-black text-white flex items-center justify-center">
@@ -112,6 +112,51 @@ export function UserProfile() {
             className="px-6 py-3 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-bold hover:border-secondary"
           >
             Create Account
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="max-w-xl mx-auto py-10 flex flex-col gap-5 border-b border-outline-variant/25">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-black text-white flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[24px]">person</span>
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-headline-sm text-on-surface font-bold truncate">
+              {user.displayName || user.email || 'Crippo Account'}
+            </h1>
+            <p className="font-body-sm text-on-surface-variant truncate">{user.email}</p>
+          </div>
+        </div>
+        <p className="font-body-md text-on-surface-variant">
+          You are signed in. Link your Cameroon Mobile Money number (+237) to buy project shares or receive royalty payouts.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/auth?mode=signup&returnTo=/profile')}
+            className="px-5 py-2.5 rounded-xl bg-secondary text-on-secondary font-label-md font-bold"
+          >
+            Complete Mobile Money Setup
+          </button>
+          {isAdmin && (
+            <Link
+              to="/admin"
+              className="px-5 py-2.5 rounded-xl bg-primary-container text-white font-label-md font-bold"
+            >
+              Open Admin Desk
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="px-5 py-2.5 rounded-xl border border-error/40 text-error font-label-md font-bold"
+          >
+            Sign Out
           </button>
         </div>
       </div>
