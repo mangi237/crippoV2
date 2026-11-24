@@ -82,10 +82,15 @@ export async function initiateCamPayCollect(input: CamPayCollectInput): Promise<
     }),
   });
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`CamPay collect error (${resp.status}): ${errText}`);
-  }
+ if (!resp.ok) {
+  const errText = await resp.text();
+  let detail = errText;
+  try {
+    const errJson = JSON.parse(errText);
+    detail = errJson.failure_code || errJson.error || errJson.message || errText;
+  } catch { /* 保持原始文本 */ }
+  throw new Error(`CamPay collect failed (${resp.status}): ${detail}`);
+}
 
   const data = (await resp.json()) as CamPayCollectResult;
   return {

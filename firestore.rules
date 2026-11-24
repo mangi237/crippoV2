@@ -8,7 +8,7 @@ service cloud.firestore {
 
     function isSignedIn() {
       return request.auth != null;
-    }
+    }Preferences: Open User Settings (JSON)
 
     function isVerifiedUser() {
       return isSignedIn() && request.auth.token.email_verified == true;
