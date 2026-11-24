@@ -8,7 +8,7 @@ import {
   scrapeSpotifyArtists,
   scrapeTikTokProfiles,
   type UnifiedSignalItem,
-} from './apifyHub';
+} from '../scrapers/apifyHub';
 
 export interface RawSocialSignal {
   sourcePlatform: 'TikTok' | 'Facebook' | 'YouTube' | 'Web';
