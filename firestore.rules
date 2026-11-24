@@ -43,13 +43,15 @@ service cloud.firestore {
         'onboardingComplete', 'creatorModeEnabled', 'kycStatus', 'createdAt', 'updatedAt'
       ]) &&
       data.keys().hasOnly([
-        'uid', 'anonymousId', 'displayName', 'city', 'interests',
+        'uid', 'anonymousId', 'displayName', 'avatarUrl', 'walletBalanceXAF', 'city', 'interests',
         'onboardingComplete', 'creatorModeEnabled', 'claimedEntityId', 'kycStatus',
         'affiliationType', 'agencyName', 'createdAt', 'updatedAt'
       ]) &&
       data.uid == userId &&
       data.anonymousId is string && data.anonymousId.size() >= 4 && data.anonymousId.size() <= 32 &&
       data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+      (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+      (!('walletBalanceXAF' in data) || (data.walletBalanceXAF is number && data.walletBalanceXAF >= 0)) &&
       data.city is string && data.city.size() >= 1 && data.city.size() <= 40 &&
       data.interests is list && data.interests.size() <= 10 &&
       (data.interests.size() == 0 || data.interests[0] is string) &&
@@ -233,10 +235,10 @@ service cloud.firestore {
       ]) &&
       data.id == paymentId &&
       data.uid == request.auth.uid &&
-      data.type in ['SHARE_PURCHASE', 'MEMO_FEE', 'BRAND_ESCROW', 'ROYALTY_DISBURSEMENT'] &&
+      data.type in ['SHARE_PURCHASE', 'MEMO_FEE', 'BRAND_ESCROW', 'ROYALTY_DISBURSEMENT', 'WALLET_DEPOSIT', 'WALLET_WITHDRAWAL'] &&
       data.reference is string && data.reference.size() >= 3 && data.reference.size() <= 128 &&
       data.amountXAF is number && data.amountXAF > 0 &&
-      data.provider in ['MTN', 'ORANGE', 'CAMPAY'] &&
+      data.provider in ['MTN', 'ORANGE', 'OTHER', 'CARD', 'WALLET', 'CAMPAY'] &&
       data.status in ['PENDING', 'SUCCESSFUL', 'FAILED'] &&
       (!('raceId' in data) || (data.raceId is string && data.raceId.size() <= 128)) &&
       (!('memoId' in data) || (data.memoId is string && data.memoId.size() <= 128)) &&
@@ -275,12 +277,11 @@ service cloud.firestore {
 
     function isValidPrediction(data, predictionId) {
       return data.keys().hasAll([
-        'id', 'creatorUid', 'entityName', 'question', 'yesPriceXAF', 'noPriceXAF',
-        'yesVotes', 'noVotes', 'totalVolumeXAF', 'endsAt', 'status', 'isPublic', 'createdAt'
+        'id', 'creatorUid', 'entityName', 'question', 'endsAt', 'status', 'isPublic', 'createdAt'
       ]) &&
       data.keys().hasOnly([
-        'id', 'creatorUid', 'entityName', 'topicCategory', 'question', 'coverArtUrl',
-        'resolutionSource', 'aiProbability', 'reasoning',
+        'id', 'creatorUid', 'entityName', 'topicCategory', 'pollType', 'question', 'coverArtUrl',
+        'resolutionSource', 'aiProbability', 'reasoning', 'options', 'votedUids',
         'yesPriceXAF', 'noPriceXAF', 'yesVotes', 'noVotes', 'totalVolumeXAF',
         'endsAt', 'status', 'isPublic', 'createdAt'
       ]) &&
@@ -288,13 +289,16 @@ service cloud.firestore {
       isValidId(data.creatorUid) &&
       data.entityName is string && data.entityName.size() >= 1 && data.entityName.size() <= 100 &&
       data.question is string && data.question.size() >= 5 && data.question.size() <= 240 &&
-      data.yesPriceXAF is number && data.yesPriceXAF >= 1 && data.yesPriceXAF <= 99 &&
-      data.noPriceXAF is number && data.noPriceXAF >= 1 && data.noPriceXAF <= 99 &&
-      data.yesVotes is number && data.yesVotes >= 0 &&
-      data.noVotes is number && data.noVotes >= 0 &&
-      data.totalVolumeXAF is number && data.totalVolumeXAF >= 0 &&
+      (!('pollType' in data) || data.pollType in ['yes_no', 'multi_choice']) &&
+      (!('options' in data) || (data.options is list && data.options.size() <= 12)) &&
+      (!('votedUids' in data) || (data.votedUids is list && data.votedUids.size() <= 1000)) &&
+      (!('yesPriceXAF' in data) || (data.yesPriceXAF is number && data.yesPriceXAF >= 0 && data.yesPriceXAF <= 100)) &&
+      (!('noPriceXAF' in data) || (data.noPriceXAF is number && data.noPriceXAF >= 0 && data.noPriceXAF <= 100)) &&
+      (!('yesVotes' in data) || (data.yesVotes is number && data.yesVotes >= 0)) &&
+      (!('noVotes' in data) || (data.noVotes is number && data.noVotes >= 0)) &&
+      (!('totalVolumeXAF' in data) || (data.totalVolumeXAF is number && data.totalVolumeXAF >= 0)) &&
       data.endsAt is string && data.endsAt.size() <= 40 &&
-      data.status in ['open', 'resolved_yes', 'resolved_no'] &&
+      data.status in ['open', 'closed', 'resolved_yes', 'resolved_no'] &&
       data.isPublic is bool &&
       (!('coverArtUrl' in data) || (data.coverArtUrl is string && data.coverArtUrl.size() <= 500)) &&
       (!('topicCategory' in data) || (data.topicCategory is string && data.topicCategory.size() <= 40)) &&
@@ -309,13 +313,20 @@ service cloud.firestore {
         'id', 'requesterUid', 'stageName', 'platformLink', 'tier', 'feeXAF', 'status', 'createdAt'
       ]) &&
       data.keys().hasOnly([
-        'id', 'requesterUid', 'stageName', 'platformLink', 'tier', 'feeXAF',
+        'id', 'requesterUid', 'fullName', 'stageName', 'platformLink', 'socialAccounts',
+        'shortBio', 'motivation', 'recipientNumber', 'paymentCompleted', 'tier', 'feeXAF',
         'paymentReference', 'auditSummary', 'status', 'createdAt'
       ]) &&
       data.id == memoId &&
       data.requesterUid == request.auth.uid &&
+      (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 120)) &&
       data.stageName is string && data.stageName.size() >= 1 && data.stageName.size() <= 100 &&
       data.platformLink is string && data.platformLink.size() >= 5 && data.platformLink.size() <= 500 &&
+      (!('socialAccounts' in data) || (data.socialAccounts is string && data.socialAccounts.size() <= 600)) &&
+      (!('shortBio' in data) || (data.shortBio is string && data.shortBio.size() <= 800)) &&
+      (!('motivation' in data) || (data.motivation is string && data.motivation.size() <= 1000)) &&
+      (!('recipientNumber' in data) || (data.recipientNumber is string && data.recipientNumber.size() <= 20)) &&
+      (!('paymentCompleted' in data) || data.paymentCompleted is bool) &&
       data.tier in ['fan_2000', 'fast_track_5000'] &&
       data.feeXAF is number && data.feeXAF in [2000, 5000] &&
       data.status in ['pending_payment', 'auditing', 'approved', 'rejected'] &&
@@ -438,7 +449,7 @@ service cloud.firestore {
           (isOwner(userId) &&
            (incoming().kycStatus in ['none', 'pending'] || incoming().kycStatus == existing().kycStatus) &&
            incoming().diff(existing()).affectedKeys().hasOnly([
-             'displayName', 'city', 'interests', 'onboardingComplete',
+             'displayName', 'avatarUrl', 'walletBalanceXAF', 'city', 'interests', 'onboardingComplete',
              'creatorModeEnabled', 'claimedEntityId', 'kycStatus', 'affiliationType', 'agencyName', 'updatedAt'
            ]))
         );
@@ -570,11 +581,11 @@ service cloud.firestore {
     match /payments/{paymentId} {
       allow get: if isValidId(paymentId) && isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
       allow list: if isAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
-      allow create: if isValidId(paymentId) && isVerifiedUser() &&
+      allow create: if isValidId(paymentId) && isSignedIn() &&
         isValidPayment(incoming(), paymentId) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
-      allow update: if isValidId(paymentId) && isVerifiedUser() &&
+      allow update: if isValidId(paymentId) && isSignedIn() &&
         isValidPayment(incoming(), paymentId) &&
         incoming().id == existing().id &&
         incoming().uid == existing().uid &&
@@ -599,7 +610,7 @@ service cloud.firestore {
       allow delete: if isValidId(catalystId) && isAdmin();
     }
 
-    // Cultural Predictions
+    // Cultural Predictions & Fan Voting Polls
     match /predictions/{predictionId} {
       allow get: if isValidId(predictionId) && (existing().isPublic == true || isAdmin());
       allow list: if existing().isPublic == true || isAdmin();
@@ -607,23 +618,25 @@ service cloud.firestore {
         isValidPrediction(incoming(), predictionId) &&
         incoming().creatorUid == request.auth.uid &&
         incoming().createdAt == request.time;
-      allow update: if isValidId(predictionId) && isVerifiedUser() &&
+      allow update: if isValidId(predictionId) && isSignedIn() &&
         isValidPrediction(incoming(), predictionId) &&
         incoming().id == existing().id &&
         incoming().creatorUid == existing().creatorUid &&
         incoming().createdAt == existing().createdAt && (
           isAdmin() ||
-          incoming().diff(existing()).affectedKeys().hasOnly(['yesVotes', 'noVotes', 'yesPriceXAF', 'noPriceXAF', 'totalVolumeXAF'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['yesVotes', 'noVotes', 'options', 'votedUids'])
         );
       allow delete: if isValidId(predictionId) && isAdmin();
     }
 
-    // Paid Memo requests
+    // Paid Memo requests (only submitted after payment completes)
     match /memos/{memoId} {
       allow get: if isValidId(memoId) && isSignedIn() && (existing().requesterUid == request.auth.uid || isAdmin());
       allow list: if isAdmin() || (isSignedIn() && existing().requesterUid == request.auth.uid);
-      allow create: if isValidId(memoId) && isVerifiedUser() &&
+      allow create: if isValidId(memoId) && isSignedIn() &&
         isValidMemo(incoming(), memoId) &&
+        incoming().status == 'auditing' &&
+        incoming().paymentCompleted == true &&
         incoming().createdAt == request.time;
       allow update: if isValidId(memoId) && isVerifiedUser() &&
         isValidMemo(incoming(), memoId) &&

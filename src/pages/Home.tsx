@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, increment, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { AnimatePresence, motion } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../services/firebase';
@@ -12,7 +12,7 @@ import { CamPayCheckoutModal } from '../components/CamPayCheckoutModal';
 import { AuthPromptModal } from '../components/AuthPromptModal';
 import { VerifiedCreatorOnly } from '../components/VerifiedCreatorOnly';
 import { formatTimeRemaining, getCoverImage } from '../utils/media';
-import type { Race, PredictionMarket, CatalystSegment } from '../types/crippo';
+import type { Race, PredictionMarket, Catalyst, CatalystSegment, PollOption } from '../types/crippo';
 
 const CATEGORIES = ['All', 'Single', 'EP / Album', 'TikTok Series', 'YouTube Show', 'Movie'];
 const SEGMENTS: Array<'All' | CatalystSegment> = [
@@ -41,18 +41,22 @@ export function Home({ onOpenApiSetup }: HomeProps) {
   const [hoverPred, setHoverPred] = useState(false);
 
   const [checkoutRace, setCheckoutRace] = useState<Race | null>(null);
-  const [checkoutPred, setCheckoutPred] = useState<{
-    pred: PredictionMarket;
-    side: 'YES' | 'NO';
-  } | null>(null);
   const [authPromptAction, setAuthPromptAction] = useState<string | null>(null);
 
   const [syncingPulse, setSyncingPulse] = useState(false);
+  const [liveScrapedCatalysts, setLiveScrapedCatalysts] = useState<Catalyst[]>([]);
   const [mintingPreds, setMintingPreds] = useState(false);
+  const [votingBusy, setVotingBusy] = useState(false);
 
+  // Admin Poll Creation State (Yes/No OR Multi-Choice Category Awards)
   const [showNewPredModal, setShowNewPredModal] = useState(false);
+  const [predPollType, setPredPollType] = useState<'yes_no' | 'multi_choice'>('yes_no');
+  const [predTopicCategory, setPredTopicCategory] = useState<
+    'Music Milestones' | 'Viral View Milestones' | 'Culture & Awards' | 'Creator Releases'
+  >('Culture & Awards');
   const [predEntityName, setPredEntityName] = useState('');
   const [predQuestion, setPredQuestion] = useState('');
+  const [predOptionsDraft, setPredOptionsDraft] = useState<string[]>(['', '', '']);
   const [predEndsAt, setPredEndsAt] = useState(
     new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
   );
@@ -72,6 +76,52 @@ export function Home({ onOpenApiSetup }: HomeProps) {
     }
   }, [predictions.length, activePredIdx]);
 
+  // Auto-fetch fresh feed content from the backend scraping pipeline on load
+  useEffect(() => {
+    let active = true;
+    fetch('/api/feed/pulse')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (data: {
+          catalysts?: Array<{
+            entityName: string;
+            segment: CatalystSegment;
+            sourcePlatform: 'TikTok' | 'Facebook' | 'YouTube' | 'Web';
+            sourceName: string;
+            sourceUrl?: string;
+            headline: string;
+            summary: string;
+            sentiment: 'bullish' | 'neutral' | 'risk_alert';
+            priceImpactPct: number;
+            engagementCount?: number;
+            publishedAt?: string;
+          }>;
+        } | null) => {
+          if (!active || !data?.catalysts?.length) return;
+          const mapped: Catalyst[] = data.catalysts.map((item, idx) => ({
+            id: `live_${idx}_${item.headline.slice(0, 12).replace(/[^a-zA-Z0-9]/g, '')}`,
+            entityName: item.entityName || 'Cameroon Scene',
+            segment: item.segment || 'Trending',
+            sourcePlatform: item.sourcePlatform || 'Web',
+            sourceName: item.sourceName || 'Crippo Pulse',
+            sourceUrl: item.sourceUrl,
+            headline: item.headline,
+            summary: item.summary,
+            sentiment: item.sentiment || 'neutral',
+            priceImpactPct: Number(item.priceImpactPct || 0),
+            engagementCount: item.engagementCount,
+            publishedAt: item.publishedAt,
+            isPublic: true,
+          }));
+          setLiveScrapedCatalysts(mapped);
+        }
+      )
+      .catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const filteredRaces = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return races
@@ -90,9 +140,15 @@ export function Home({ onOpenApiSetup }: HomeProps) {
       });
   }, [races, selectedCategory, searchQuery]);
 
+  const combinedCatalysts = useMemo(() => {
+    const seen = new Set(catalysts.map((c) => c.headline.toLowerCase()));
+    const extras = liveScrapedCatalysts.filter((c) => !seen.has(c.headline.toLowerCase()));
+    return [...catalysts, ...extras];
+  }, [catalysts, liveScrapedCatalysts]);
+
   const filteredCatalysts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return catalysts
+    return combinedCatalysts
       .filter((c) => (selectedSegment === 'All' ? true : c.segment === selectedSegment))
       .filter((c) => {
         if (!q) return true;
@@ -102,7 +158,7 @@ export function Home({ onOpenApiSetup }: HomeProps) {
           c.summary.toLowerCase().includes(q)
         );
       });
-  }, [catalysts, selectedSegment, searchQuery]);
+  }, [combinedCatalysts, selectedSegment, searchQuery]);
 
   const handleRefreshPulse = async () => {
     if (!user) {
@@ -275,15 +331,14 @@ export function Home({ onOpenApiSetup }: HomeProps) {
           creatorUid: user.uid,
           entityName: p.entityName,
           topicCategory: p.topicCategory,
+          pollType: 'yes_no',
           question: p.question,
           resolutionSource: p.resolutionSource,
           aiProbability: p.aiProbability,
           reasoning: p.reasoning,
-          yesPriceXAF: p.yesPriceXAF,
-          noPriceXAF: p.noPriceXAF,
-          yesVotes: Math.max(1, p.yesPriceXAF),
-          noVotes: Math.max(1, p.noPriceXAF),
-          totalVolumeXAF: 0,
+          yesVotes: 0,
+          noVotes: 0,
+          votedUids: [],
           endsAt: new Date(p.endsAt).toISOString(),
           status: 'open',
           isPublic: true,
@@ -291,11 +346,11 @@ export function Home({ onOpenApiSetup }: HomeProps) {
         });
         created++;
       }
-      showToast('Predictions Published', `${created} cultural prediction markets live.`);
+      showToast('Fan Polls Published', `${created} cultural fan voting polls live.`);
     } catch (err: unknown) {
       const e = err as Error & { missingKeys?: string[] };
       if (isAdmin && e.missingKeys?.length) onOpenApiSetup();
-      showToast('Prediction Error', e.message || 'Failed to synthesize predictions.', 'error');
+      showToast('Poll Error', e.message || 'Failed to synthesize polls.', 'error');
     } finally {
       setMintingPreds(false);
     }
@@ -304,12 +359,28 @@ export function Home({ onOpenApiSetup }: HomeProps) {
   const handleCreatePrediction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.emailVerified) {
-      showToast('Sign-In Required', 'Verified email required to launch a prediction.', 'error');
+      showToast('Sign-In Required', 'Verified admin email required to publish a poll.', 'error');
       return;
     }
     if (predQuestion.trim().length < 5 || !predEntityName.trim()) {
-      showToast('Validation', 'Enter entity name and a question (5+ chars).', 'error');
+      showToast('Validation', 'Enter category/entity name and a poll question (5+ chars).', 'error');
       return;
+    }
+
+    let cleanOptions: PollOption[] = [];
+    if (predPollType === 'multi_choice') {
+      cleanOptions = predOptionsDraft
+        .map((label, idx) => ({
+          id: `opt_${idx + 1}_${Date.now().toString(36).slice(-4)}`,
+          label: label.trim().slice(0, 80),
+          votes: 0,
+        }))
+        .filter((o) => o.label.length > 0);
+
+      if (cleanOptions.length < 2) {
+        showToast('Nominees Required', 'Add at least 2 nominee choices for a category award poll.', 'error');
+        return;
+      }
     }
 
     setPredBusy(true);
@@ -319,12 +390,13 @@ export function Home({ onOpenApiSetup }: HomeProps) {
         id,
         creatorUid: user.uid,
         entityName: predEntityName.trim().slice(0, 100),
+        topicCategory: predTopicCategory,
+        pollType: predPollType,
         question: predQuestion.trim().slice(0, 240),
-        yesPriceXAF: 50,
-        noPriceXAF: 50,
-        yesVotes: 1,
-        noVotes: 1,
-        totalVolumeXAF: 0,
+        ...(predPollType === 'multi_choice' ? { options: cleanOptions } : {}),
+        yesVotes: 0,
+        noVotes: 0,
+        votedUids: [],
         endsAt: new Date(predEndsAt).toISOString(),
         status: 'open',
         isPublic: true,
@@ -333,7 +405,8 @@ export function Home({ onOpenApiSetup }: HomeProps) {
       setShowNewPredModal(false);
       setPredEntityName('');
       setPredQuestion('');
-      showToast('Prediction Live', 'Cultural prediction contract published on the live floor.');
+      setPredOptionsDraft(['', '', '']);
+      showToast('Poll Published', 'Fan voting poll is now live.');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `predictions/${id}`);
     } finally {
@@ -341,10 +414,51 @@ export function Home({ onOpenApiSetup }: HomeProps) {
     }
   };
 
+  const handleCastVote = async (pred: PredictionMarket, choice: 'YES' | 'NO' | string) => {
+    if (!user) {
+      setAuthPromptAction('cast your fan vote');
+      return;
+    }
+    if (pred.votedUids?.includes(user.uid)) {
+      showToast('Already Voted', 'You have already cast your vote on this poll.', 'info');
+      return;
+    }
+    setVotingBusy(true);
+    try {
+      if (pred.pollType === 'multi_choice' && pred.options) {
+        const updatedOptions = pred.options.map((opt) =>
+          opt.id === choice ? { ...opt, votes: (opt.votes || 0) + 1 } : opt
+        );
+        await updateDoc(doc(db, 'predictions', pred.id), {
+          options: updatedOptions,
+          votedUids: arrayUnion(user.uid),
+        });
+      } else {
+        await updateDoc(doc(db, 'predictions', pred.id), {
+          ...(choice === 'YES' ? { yesVotes: increment(1) } : { noVotes: increment(1) }),
+          votedUids: arrayUnion(user.uid),
+        });
+      }
+      showToast(
+        lang === 'fr' ? 'Vote Enregistré' : 'Vote Counted',
+        lang === 'fr' ? 'Merci pour votre participation !' : 'Your fan vote has been recorded.'
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `predictions/${pred.id}`);
+    } finally {
+      setVotingBusy(false);
+    }
+  };
+
   const activePred = predictions[activePredIdx];
-  const predTotalVotes = activePred ? Math.max(1, activePred.yesVotes + activePred.noVotes) : 2;
-  const yesPct = activePred ? Math.round((activePred.yesVotes / predTotalVotes) * 100) : 50;
-  const noPct = 100 - yesPct;
+  const isMultiChoice = activePred?.pollType === 'multi_choice' && (activePred.options?.length || 0) >= 2;
+  const totalYesNoVotes = activePred ? activePred.yesVotes + activePred.noVotes : 0;
+  const yesPct = totalYesNoVotes > 0 ? Math.round((activePred.yesVotes / totalYesNoVotes) * 100) : 50;
+  const noPct = totalYesNoVotes > 0 ? 100 - yesPct : 50;
+  const multiTotalVotes = isMultiChoice
+    ? (activePred?.options || []).reduce((acc, o) => acc + (o.votes || 0), 0)
+    : 0;
+  const userAlreadyVoted = Boolean(user && activePred?.votedUids?.includes(user.uid));
 
   return (
     <div className="flex flex-col gap-10">
@@ -661,7 +775,7 @@ export function Home({ onOpenApiSetup }: HomeProps) {
         )}
       </section>
 
-      {/* 2. SECTION TWO: CULTURAL PREDICTIONS (Borderless Seamless Flow) */}
+      {/* 2. SECTION TWO: CULTURAL PREDICTIONS & FAN VOTING (Borderless, Free Voting) */}
       <section
         id="predictions"
         className="border-t border-outline-variant/25 pt-8 flex flex-col gap-5"
@@ -670,28 +784,28 @@ export function Home({ onOpenApiSetup }: HomeProps) {
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-headline-lg-mobile text-on-surface font-bold">
-            {lang === 'fr' ? 'Prédictions Culturelles' : 'Cultural Predictions'}
+            {lang === 'fr' ? 'Votes & Prédictions des Fans' : 'Cultural Predictions & Fan Voting'}
           </h2>
 
           <div className="flex flex-wrap items-center gap-2">
-            {user && (
-              <button
-                type="button"
-                disabled={mintingPreds}
-                onClick={handleAutoMintPredictions}
-                className="px-3 py-1.5 rounded-lg border border-outline-variant/40 text-on-surface font-label-xs uppercase hover:border-secondary hover:text-secondary transition-colors disabled:opacity-60"
-              >
-                {mintingPreds ? '...' : 'Refresh Predictions'}
-              </button>
-            )}
             {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setShowNewPredModal(true)}
-                className="px-3 py-1.5 rounded-lg bg-secondary text-on-secondary font-label-xs uppercase font-bold"
-              >
-                + New
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={mintingPreds}
+                  onClick={handleAutoMintPredictions}
+                  className="px-3 py-1.5 rounded-lg border border-outline-variant/40 text-on-surface font-label-xs uppercase hover:border-secondary hover:text-secondary transition-colors disabled:opacity-60"
+                >
+                  {mintingPreds ? '...' : 'Generate Polls'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNewPredModal(true)}
+                  className="px-3 py-1.5 rounded-lg bg-secondary text-on-secondary font-label-xs uppercase font-bold"
+                >
+                  + Create Poll
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -709,7 +823,10 @@ export function Home({ onOpenApiSetup }: HomeProps) {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="px-2.5 py-0.5 rounded bg-secondary-fixed text-secondary font-label-xs uppercase tracking-wider truncate">
-                    {activePred.topicCategory || 'Cultural Milestone'}
+                    {activePred.topicCategory || 'Culture & Awards'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-xs uppercase">
+                    {isMultiChoice ? 'Category Award' : 'Yes / No Poll'}
                   </span>
                   <span className="font-body-sm text-on-surface-variant shrink-0 tabular-nums">
                     {activePredIdx + 1} / {predictions.length}
@@ -746,75 +863,104 @@ export function Home({ onOpenApiSetup }: HomeProps) {
                   className="w-14 h-14 rounded-xl object-cover shrink-0"
                 />
                 <div className="flex-1 min-w-0">
+                  <span className="font-label-xs uppercase text-secondary font-bold block">
+                    {activePred.entityName}
+                  </span>
                   <h3 className="font-headline-sm text-on-surface text-[18px] sm:text-[20px] leading-snug font-bold">
                     {activePred.question}
                   </h3>
                   <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[12px] tabular-nums">
                     <span className="text-on-tertiary-container font-semibold">
-                      Vol: {activePred.totalVolumeXAF.toLocaleString()} FCFA
+                      {(isMultiChoice ? multiTotalVotes : totalYesNoVotes).toLocaleString()} Fan Votes
                     </span>
                     <span className="text-outline-variant">·</span>
                     <span className="text-on-surface-variant">
                       Ends {formatTimeRemaining(activePred.endsAt, lang)}
                     </span>
+                    {userAlreadyVoted && (
+                      <>
+                        <span className="text-outline-variant">·</span>
+                        <span className="text-secondary font-bold">You voted ✓</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Crowd Consensus Split Bar */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between text-[11px] font-bold uppercase tabular-nums">
-                  <span className="text-on-tertiary-container">{yesPct}% YES CONSENSUS</span>
-                  <span className="text-error">{noPct}% NO CONSENSUS</span>
+              {isMultiChoice && activePred.options ? (
+                <div className="flex flex-col gap-2.5">
+                  {activePred.options.map((opt) => {
+                    const pct =
+                      multiTotalVotes > 0 ? Math.round(((opt.votes || 0) / multiTotalVotes) * 100) : 0;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={votingBusy || userAlreadyVoted}
+                        onClick={() => handleCastVote(activePred, opt.id)}
+                        className="relative w-full text-left px-4 py-3 rounded-xl border border-outline-variant/40 hover:border-secondary transition-colors overflow-hidden disabled:opacity-80"
+                      >
+                        <div
+                          className="absolute inset-y-0 left-0 bg-secondary/12 transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                        <div className="relative flex items-center justify-between gap-3 tabular-nums">
+                          <span className="font-label-md font-bold text-on-surface">{opt.label}</span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="font-mono-num text-[12px] text-on-surface-variant">
+                              {(opt.votes || 0).toLocaleString()} votes
+                            </span>
+                            <span className="font-ticker-val text-secondary font-bold w-11 text-right">
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="w-full h-2 rounded-full bg-error overflow-hidden flex">
-                  <div
-                    className="h-full bg-on-tertiary-container transition-all duration-500"
-                    style={{ width: `${yesPct}%` }}
-                  />
-                </div>
-              </div>
+              ) : (
+                <>
+                  {/* Crowd Consensus Split Bar */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold uppercase tabular-nums">
+                      <span className="text-on-tertiary-container">
+                        {yesPct}% YES ({activePred.yesVotes} votes)
+                      </span>
+                      <span className="text-error">
+                        {noPct}% NO ({activePred.noVotes} votes)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-error overflow-hidden flex">
+                      <div
+                        className="h-full bg-on-tertiary-container transition-all duration-500"
+                        style={{ width: `${yesPct}%` }}
+                      />
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!user) {
-                      setAuthPromptAction('vote YES on cultural predictions');
-                      return;
-                    }
-                    setCheckoutPred({ pred: activePred, side: 'YES' });
-                  }}
-                  className="py-3 px-4 rounded-xl bg-on-tertiary-container text-white flex flex-col gap-0.5 text-left hover:opacity-95 active:scale-[0.99] transition-all"
-                >
-                  <div className="w-full flex items-center justify-between font-headline-sm text-[15px] font-bold tabular-nums">
-                    <span>YES ({yesPct}%)</span>
-                    <span className="font-mono-num">{activePred.yesPriceXAF} XAF</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      disabled={votingBusy || userAlreadyVoted}
+                      onClick={() => handleCastVote(activePred, 'YES')}
+                      className="py-3 px-4 rounded-xl bg-on-tertiary-container text-white flex items-center justify-between font-headline-sm text-[15px] font-bold hover:opacity-95 active:scale-[0.99] transition-all disabled:opacity-75"
+                    >
+                      <span>{userAlreadyVoted ? 'Voted' : 'Vote YES'}</span>
+                      <span className="font-mono-num tabular-nums">{yesPct}%</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={votingBusy || userAlreadyVoted}
+                      onClick={() => handleCastVote(activePred, 'NO')}
+                      className="py-3 px-4 rounded-xl bg-error text-white flex items-center justify-between font-headline-sm text-[15px] font-bold hover:opacity-95 active:scale-[0.99] transition-all disabled:opacity-75"
+                    >
+                      <span>{userAlreadyVoted ? 'Voted' : 'Vote NO'}</span>
+                      <span className="font-mono-num tabular-nums">{noPct}%</span>
+                    </button>
                   </div>
-                  <span className="text-[11px] text-white/85 tabular-nums">
-                    Return {(100 / Math.max(5, activePred.yesPriceXAF)).toFixed(2)}x · MoMo
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!user) {
-                      setAuthPromptAction('vote NO on cultural predictions');
-                      return;
-                    }
-                    setCheckoutPred({ pred: activePred, side: 'NO' });
-                  }}
-                  className="py-3 px-4 rounded-xl bg-error text-white flex flex-col gap-0.5 text-left hover:opacity-95 active:scale-[0.99] transition-all"
-                >
-                  <div className="w-full flex items-center justify-between font-headline-sm text-[15px] font-bold tabular-nums">
-                    <span>NO ({noPct}%)</span>
-                    <span className="font-mono-num">{activePred.noPriceXAF} XAF</span>
-                  </div>
-                  <span className="text-[11px] text-white/85 tabular-nums">
-                    Return {(100 / Math.max(5, activePred.noPriceXAF)).toFixed(2)}x · Orange
-                  </span>
-                </button>
-              </div>
+                </>
+              )}
 
               {predictions.length > 1 && (
                 <div className="flex items-center justify-center gap-1.5 pt-1">
@@ -836,17 +982,16 @@ export function Home({ onOpenApiSetup }: HomeProps) {
           <div className="flex flex-col items-start justify-center gap-3 py-2">
             <p className="font-body-md text-on-surface-variant">
               {lang === 'fr'
-                ? 'Aucune prédiction culturelle publiée pour le moment.'
-                : 'No live cultural predictions yet.'}
+                ? 'Aucun sondage culturel publié pour le moment.'
+                : 'No active fan voting polls yet.'}
             </p>
-            {user && (
+            {isAdmin && (
               <button
                 type="button"
-                disabled={mintingPreds}
-                onClick={handleAutoMintPredictions}
+                onClick={() => setShowNewPredModal(true)}
                 className="px-4 py-2.5 rounded-xl bg-secondary text-white font-label-md font-bold"
               >
-                {mintingPreds ? 'Generating...' : 'Generate Cultural Predictions'}
+                + Create First Poll
               </button>
             )}
           </div>
@@ -941,24 +1086,13 @@ export function Home({ onOpenApiSetup }: HomeProps) {
         )}
       </section>
 
-      {/* CamPay Modals */}
+      {/* CamPay Share Checkout Modal */}
       {checkoutRace && (
         <CamPayCheckoutModal
           mode="race"
           race={checkoutRace}
           onClose={() => setCheckoutRace(null)}
           onSuccess={(msg) => showToast('Trade Settled', msg, 'success')}
-          onOpenApiSetup={onOpenApiSetup}
-        />
-      )}
-
-      {checkoutPred && (
-        <CamPayCheckoutModal
-          mode="prediction"
-          prediction={checkoutPred.pred}
-          predictionSide={checkoutPred.side}
-          onClose={() => setCheckoutPred(null)}
-          onSuccess={(msg) => showToast('Prediction Position Locked', msg, 'success')}
           onOpenApiSetup={onOpenApiSetup}
         />
       )}
@@ -970,7 +1104,7 @@ export function Home({ onOpenApiSetup }: HomeProps) {
         />
       )}
 
-      {/* New Prediction Modal (Admin Only) */}
+      {/* New Fan Voting Poll Modal (Admin Only: Yes/No OR Multi-Choice Category Awards) */}
       {showNewPredModal && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
@@ -980,11 +1114,11 @@ export function Home({ onOpenApiSetup }: HomeProps) {
         >
           <form
             onSubmit={handleCreatePrediction}
-            className="w-full max-w-md bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-2xl p-6 flex flex-col gap-4"
+            className="w-full max-w-md bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-2xl p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
-              <h3 className="font-headline-sm text-on-surface">
-                {lang === 'fr' ? 'Publier un Contrat Prédictif' : 'Publish Cultural Prediction'}
+              <h3 className="font-headline-sm text-on-surface font-bold">
+                {lang === 'fr' ? 'Créer un Sondage Fan' : 'Create Fan Voting Poll'}
               </h3>
               <button
                 type="button"
@@ -995,37 +1129,132 @@ export function Home({ onOpenApiSetup }: HomeProps) {
               </button>
             </div>
 
+            {/* Poll Type Selector */}
+            <div className="grid grid-cols-2 gap-2 border-b border-outline-variant/25 pb-2">
+              <button
+                type="button"
+                onClick={() => setPredPollType('yes_no')}
+                className={`py-2 rounded-xl font-label-xs uppercase font-bold ${
+                  predPollType === 'yes_no'
+                    ? 'bg-secondary text-white'
+                    : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Yes / No Question
+              </button>
+              <button
+                type="button"
+                onClick={() => setPredPollType('multi_choice')}
+                className={`py-2 rounded-xl font-label-xs uppercase font-bold ${
+                  predPollType === 'multi_choice'
+                    ? 'bg-secondary text-white'
+                    : 'bg-surface-container-low text-on-surface-variant'
+                }`}
+              >
+                Category Award
+              </button>
+            </div>
+
             <div className="flex flex-col gap-1">
               <label className="font-label-xs uppercase text-on-surface-variant">
-                Creator / Entity Name
+                Topic Category
+              </label>
+              <select
+                value={predTopicCategory}
+                onChange={(e) =>
+                  setPredTopicCategory(e.target.value as typeof predTopicCategory)
+                }
+                className="px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 text-on-surface"
+              >
+                <option value="Culture & Awards">Culture &amp; Awards</option>
+                <option value="Music Milestones">Music Milestones</option>
+                <option value="Viral View Milestones">Viral View Milestones</option>
+                <option value="Creator Releases">Creator Releases</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="font-label-xs uppercase text-on-surface-variant">
+                {predPollType === 'multi_choice' ? 'Award Category Title' : 'Creator / Subject'}
               </label>
               <input
                 type="text"
                 required
                 value={predEntityName}
                 onChange={(e) => setPredEntityName(e.target.value)}
-                placeholder="e.g. Locko / Blanche Bailly"
+                placeholder={
+                  predPollType === 'multi_choice' ? 'e.g. Best Male Artist 2026' : 'e.g. Locko / Blanche Bailly'
+                }
                 className="px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 text-on-surface"
               />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-label-xs uppercase text-on-surface-variant">
-                Binary Question (YES/NO)
+                {predPollType === 'multi_choice' ? 'Award Prompt / Question' : 'Yes / No Question'}
               </label>
               <textarea
                 required
-                rows={3}
+                rows={2}
                 value={predQuestion}
                 onChange={(e) => setPredQuestion(e.target.value)}
-                placeholder="Will the upcoming music video cross 500,000 YouTube views within 14 days?"
+                placeholder={
+                  predPollType === 'multi_choice'
+                    ? 'Who should win Best Male Artist of the Year?'
+                    : 'Will the upcoming music video cross 500,000 YouTube views within 14 days?'
+                }
                 className="px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 text-on-surface"
               />
             </div>
 
+            {predPollType === 'multi_choice' && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-label-xs uppercase text-on-surface-variant">
+                    Nominees / Choices (min 2)
+                  </label>
+                  {predOptionsDraft.length < 8 && (
+                    <button
+                      type="button"
+                      onClick={() => setPredOptionsDraft((prev) => [...prev, ''])}
+                      className="font-label-xs text-secondary font-bold hover:underline"
+                    >
+                      + Add Nominee
+                    </button>
+                  )}
+                </div>
+                {predOptionsDraft.map((val, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={val}
+                      onChange={(e) => {
+                        const next = [...predOptionsDraft];
+                        next[idx] = e.target.value;
+                        setPredOptionsDraft(next);
+                      }}
+                      placeholder={`Nominee ${idx + 1} (e.g. Locko)`}
+                      className="flex-1 px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/40 text-on-surface text-sm"
+                    />
+                    {predOptionsDraft.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPredOptionsDraft((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-error"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex flex-col gap-1">
               <label className="font-label-xs uppercase text-on-surface-variant">
-                Settlement Date
+                Voting Closes On
               </label>
               <input
                 type="date"
@@ -1041,7 +1270,7 @@ export function Home({ onOpenApiSetup }: HomeProps) {
               disabled={predBusy}
               className="w-full py-3 rounded-xl bg-secondary text-on-secondary font-headline-sm text-[14px] font-bold uppercase tracking-wider disabled:opacity-60"
             >
-              {predBusy ? '...' : 'Publish Live Contract'}
+              {predBusy ? 'Publishing...' : 'Publish Fan Poll'}
             </button>
           </form>
         </div>

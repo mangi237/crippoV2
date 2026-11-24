@@ -16,6 +16,8 @@ export interface UserPublic {
   uid: string;
   anonymousId: string;
   displayName: string;
+  avatarUrl?: string;
+  walletBalanceXAF?: number;
   city: string;
   interests: string[];
   onboardingComplete: boolean;
@@ -190,10 +192,16 @@ export interface Trade {
 export interface Payment {
   id: string;
   uid: string;
-  type: 'SHARE_PURCHASE' | 'MEMO_FEE' | 'BRAND_ESCROW' | 'ROYALTY_DISBURSEMENT';
+  type:
+    | 'SHARE_PURCHASE'
+    | 'MEMO_FEE'
+    | 'BRAND_ESCROW'
+    | 'ROYALTY_DISBURSEMENT'
+    | 'WALLET_DEPOSIT'
+    | 'WALLET_WITHDRAWAL';
   reference: string;
   amountXAF: number;
-  provider: MomoProvider | 'CAMPAY';
+  provider: MomoProvider | 'CARD' | 'WALLET' | 'CAMPAY';
   status: 'PENDING' | 'SUCCESSFUL' | 'FAILED';
   raceId?: string;
   memoId?: string;
@@ -221,23 +229,32 @@ export interface Catalyst {
   createdAt?: unknown;
 }
 
+export interface PollOption {
+  id: string;
+  label: string;
+  votes: number;
+}
+
 export interface PredictionMarket {
   id: string;
   creatorUid: string;
   entityName: string;
   topicCategory?: 'Music Milestones' | 'Viral View Milestones' | 'Culture & Awards' | 'Creator Releases';
+  pollType?: 'yes_no' | 'multi_choice';
   question: string;
   coverArtUrl?: string;
   resolutionSource?: string;
   aiProbability?: number;
   reasoning?: string;
-  yesPriceXAF: number;
-  noPriceXAF: number;
+  options?: PollOption[];
+  votedUids?: string[];
+  yesPriceXAF?: number;
+  noPriceXAF?: number;
   yesVotes: number;
   noVotes: number;
-  totalVolumeXAF: number;
+  totalVolumeXAF?: number;
   endsAt: string;
-  status: 'open' | 'resolved_yes' | 'resolved_no';
+  status: 'open' | 'closed' | 'resolved_yes' | 'resolved_no';
   isPublic: boolean;
   createdAt?: unknown;
 }
@@ -245,8 +262,14 @@ export interface PredictionMarket {
 export interface Memo {
   id: string;
   requesterUid: string;
+  fullName?: string;
   stageName: string;
   platformLink: string;
+  socialAccounts?: string;
+  shortBio?: string;
+  motivation?: string;
+  recipientNumber?: string;
+  paymentCompleted?: boolean;
   tier: 'fan_2000' | 'fast_track_5000';
   feeXAF: number;
   paymentReference?: string;

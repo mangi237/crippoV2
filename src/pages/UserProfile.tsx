@@ -1,13 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../services/firebase';
-import { useAuth } from '../contexts/AuthContext';
+import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage, handleFirestoreError, OperationType } from '../services/firebase';
+import { useAuth, detectMomoProvider } from '../contexts/AuthContext';
 import { useMarket } from '../contexts/MarketContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { WalletModal } from '../components/WalletModal';
 import { formatTimeRemaining } from '../utils/media';
 
 export function UserProfile() {
   const { user, profile, privateInfo, signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
+  const { lang, setLang } = useLanguage();
   const {
     races,
     myTrades,
@@ -30,6 +36,27 @@ export function UserProfile() {
 
   const [togglingCreator, setTogglingCreator] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [walletModalTab, setWalletModalTab] = useState<'deposit' | 'withdraw' | null>(null);
+
+  // Settings & Preferences State
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [avatarUrlDraft, setAvatarUrlDraft] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setDisplayNameDraft(profile.displayName || '');
+      setAvatarUrlDraft(profile.avatarUrl || '');
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    if (privateInfo?.phone) {
+      setPhoneDraft(privateInfo.phone);
+    }
+  }, [privateInfo?.phone]);
 
   const activeHoldings = useMemo(() => {
     const map = new Map<
@@ -187,14 +214,104 @@ export function UserProfile() {
     }
   };
 
+  const handleAvatarFileUpload = async (file: File) => {
+    if (!user) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('Invalid Image', 'Please select a PNG, JPG, or WebP image file.', 'error');
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const storageRef = ref(storage, `avatars/${user.uid}/avatar_${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      setAvatarUrlDraft(url);
+      await updateDoc(doc(db, 'users', user.uid), {
+        avatarUrl: url,
+        updatedAt: serverTimestamp(),
+      });
+      showToast('Avatar Updated', 'Your profile photo has been uploaded.');
+    } catch (err: unknown) {
+      showToast('Upload Failed', (err as Error).message || 'Could not upload avatar.', 'error');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleSaveProfileSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !profile) return;
+
+    const cleanName = displayNameDraft.trim().slice(0, 80);
+    if (!cleanName) {
+      showToast('Display Name Required', 'Please enter a valid display name.', 'error');
+      return;
+    }
+
+    const cleanAvatar = avatarUrlDraft.trim().slice(0, 500);
+    if (cleanAvatar && !/^https?:\/\//i.test(cleanAvatar)) {
+      showToast('Invalid Avatar URL', 'Avatar URL must start with http:// or https://.', 'error');
+      return;
+    }
+
+    const cleanPhone = phoneDraft.replace(/\D/g, '');
+    if (phoneDraft.trim() && !/^2376[0-9]{8}$/.test(cleanPhone)) {
+      showToast('Invalid MoMo Number', 'Use Cameroon format 2376XXXXXXXX.', 'error');
+      return;
+    }
+
+    setSavingSettings(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        displayName: cleanName,
+        avatarUrl: cleanAvatar,
+        updatedAt: serverTimestamp(),
+      });
+
+      if (cleanPhone) {
+        const provider = detectMomoProvider(cleanPhone);
+        if (privateInfo) {
+          await updateDoc(doc(db, 'users', user.uid, 'private', 'info'), {
+            phone: cleanPhone,
+            momoProvider: provider,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await setDoc(doc(db, 'users', user.uid, 'private', 'info'), {
+            uid: user.uid,
+            email: user.email || '',
+            phone: cleanPhone,
+            momoProvider: provider,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
+      showToast('Settings Saved', 'Your profile details and Mobile Money settings were updated.');
+    } catch (err: unknown) {
+      showToast('Save Error', (err as Error).message || 'Could not save settings.', 'error');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-8">
       {/* Account Summary Header */}
       <section className="pb-6 border-b border-outline-variant/25 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
-          <div className="w-14 h-14 rounded-lg bg-black text-white flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[26px]">person</span>
-          </div>
+          {profile.avatarUrl ? (
+            <img
+              src={profile.avatarUrl}
+              alt={profile.displayName}
+              className="w-14 h-14 rounded-lg object-cover border border-outline-variant/30 shrink-0"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-lg bg-black text-white flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[26px]">person</span>
+            </div>
+          )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-headline-lg-mobile text-on-surface font-bold truncate">
@@ -219,6 +336,20 @@ export function UserProfile() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setWalletModalTab('deposit')}
+            className="px-4 py-2 rounded-xl bg-secondary text-on-secondary font-label-md font-bold"
+          >
+            Deposit
+          </button>
+          <button
+            type="button"
+            onClick={() => setWalletModalTab('withdraw')}
+            className="px-4 py-2 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-semibold hover:border-secondary"
+          >
+            Withdraw
+          </button>
           <Link
             to="/trades"
             className="px-4 py-2 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-semibold hover:border-secondary"
@@ -236,7 +367,29 @@ export function UserProfile() {
       </section>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pb-6 border-b border-outline-variant/25 tabular-nums">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pb-6 border-b border-outline-variant/25 tabular-nums">
+        <div>
+          <span className="font-label-xs uppercase text-on-surface-variant">Wallet Balance</span>
+          <div className="font-headline-lg-mobile text-secondary font-bold mt-1">
+            {(profile.walletBalanceXAF || 0).toLocaleString()} XAF
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <button
+              type="button"
+              onClick={() => setWalletModalTab('deposit')}
+              className="font-label-xs uppercase text-secondary font-bold hover:underline"
+            >
+              + Deposit (MoMo / Card)
+            </button>
+            <button
+              type="button"
+              onClick={() => setWalletModalTab('withdraw')}
+              className="font-label-xs uppercase text-on-surface-variant font-bold hover:text-on-surface"
+            >
+              Cash Out →
+            </button>
+          </div>
+        </div>
         <div>
           <span className="font-label-xs uppercase text-on-surface-variant">Active Raises Held</span>
           <div className="font-headline-lg-mobile text-on-surface font-bold mt-1">
@@ -591,13 +744,157 @@ export function UserProfile() {
             )}
           </section>
 
+          {/* Profile Settings & Preferences */}
+          <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
+            <div>
+              <span className="font-label-xs uppercase text-secondary font-bold">
+                Account Preferences
+              </span>
+              <h2 className="font-headline-sm text-on-surface font-bold">
+                Profile Settings &amp; Display
+              </h2>
+            </div>
+
+            <form onSubmit={handleSaveProfileSettings} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="font-label-xs uppercase text-on-surface-variant">
+                  Display Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={displayNameDraft}
+                  onChange={(e) => setDisplayNameDraft(e.target.value)}
+                  placeholder="Your display name"
+                  className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="font-label-xs uppercase text-on-surface-variant">
+                  Cameroon MoMo / Orange Number (+237)
+                </label>
+                <input
+                  type="tel"
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  placeholder="237677821940"
+                  className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-mono-num"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="font-label-xs uppercase text-on-surface-variant">
+                  Profile Avatar
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="px-3.5 py-2 rounded-xl border border-outline-variant/45 text-on-surface font-label-xs uppercase font-bold cursor-pointer hover:border-secondary">
+                    {uploadingAvatar ? 'Uploading...' : 'Upload Photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploadingAvatar}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleAvatarFileUpload(file);
+                      }}
+                    />
+                  </label>
+                  {avatarUrlDraft && (
+                    <button
+                      type="button"
+                      onClick={() => setAvatarUrlDraft('')}
+                      className="px-3 py-2 rounded-xl border border-outline-variant/40 text-on-surface-variant font-label-xs uppercase font-bold hover:text-error"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="url"
+                  value={avatarUrlDraft}
+                  onChange={(e) => setAvatarUrlDraft(e.target.value)}
+                  placeholder="Or paste https:// avatar image URL"
+                  className="px-3.5 py-2 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="w-full py-2.5 rounded-xl bg-primary-container text-white font-label-md font-bold disabled:opacity-60"
+              >
+                {savingSettings ? 'Saving Settings...' : 'Save Profile Settings'}
+              </button>
+            </form>
+
+            <div className="pt-3 border-t border-outline-variant/25 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <span className="font-label-xs uppercase text-on-surface-variant">Language</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setLang('en')}
+                    className={`py-2 rounded-lg font-label-xs uppercase font-bold border transition-colors ${
+                      lang === 'en'
+                        ? 'bg-secondary text-white border-secondary'
+                        : 'border-outline-variant/40 text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    English
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLang('fr')}
+                    className={`py-2 rounded-lg font-label-xs uppercase font-bold border transition-colors ${
+                      lang === 'fr'
+                        ? 'bg-secondary text-white border-secondary'
+                        : 'border-outline-variant/40 text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Français
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="font-label-xs uppercase text-on-surface-variant">Appearance</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTheme('light')}
+                    className={`py-2 rounded-lg font-label-xs uppercase font-bold border transition-colors ${
+                      theme === 'light'
+                        ? 'bg-secondary text-white border-secondary'
+                        : 'border-outline-variant/40 text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Light Mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTheme('dark')}
+                    className={`py-2 rounded-lg font-label-xs uppercase font-bold border transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-secondary text-white border-secondary'
+                        : 'border-outline-variant/40 text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    Dark Mode
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Rising Creator Memo Section (Borderless) */}
           <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-3">
             <h3 className="font-headline-sm text-on-surface font-bold leading-snug">
               Are you a rising creator and feel like you deserve to be on the market? Request a Memo now.
             </h3>
             <p className="font-body-sm text-on-surface-variant">
-              Submit your YouTube, Spotify, or TikTok channel for an Admin catalog valuation review.
+              Submit your profile, social accounts, bio, and channel pitch for Admin catalog review.
             </p>
             <Link
               to="/creators?memo=1"
@@ -608,6 +905,14 @@ export function UserProfile() {
           </section>
         </div>
       </div>
+
+      {walletModalTab && (
+        <WalletModal
+          initialTab={walletModalTab}
+          onClose={() => setWalletModalTab(null)}
+          onSuccess={(msg) => showToast('Wallet Updated', msg)}
+        />
+      )}
     </div>
   );
 }

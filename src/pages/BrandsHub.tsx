@@ -15,11 +15,41 @@ interface BrandsHubProps {
 
 export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
   const { user, profile, privateInfo } = useAuth();
-  const { campaigns, entities, races, myPayments, isAdmin, showToast } = useMarket();
+  const { campaigns, entities, races, myPayments, isAdmin, isVerifiedCreator, showToast } = useMarket();
   const { lang } = useLanguage();
 
   const [hubTab, setHubTab] = useState<'brands' | 'creator'>('brands');
   const [authPromptAction, setAuthPromptAction] = useState<string | null>(null);
+
+  if (!isVerifiedCreator && !isAdmin) {
+    return (
+      <div className="max-w-xl mx-auto py-14 text-center flex flex-col items-center gap-4">
+        <div className="w-12 h-12 rounded-lg bg-black text-white flex items-center justify-center">
+          <span className="material-symbols-outlined text-[24px]">verified_user</span>
+        </div>
+        <h1 className="font-headline-sm text-on-surface font-bold">
+          Verified Creators Only
+        </h1>
+        <p className="font-body-md text-on-surface-variant">
+          The Brands &amp; Partnerships Hub is exclusive to KYC-verified creators and labels on Crippo. Claim your creator profile or submit an application memo to unlock access.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+          <Link
+            to="/creators?claim=1"
+            className="px-5 py-2.5 rounded-xl bg-secondary text-white font-label-md font-bold"
+          >
+            Verify Creator Profile
+          </Link>
+          <Link
+            to="/"
+            className="px-5 py-2.5 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-bold hover:border-secondary"
+          >
+            Back to Market Feed
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   // Corporate Escrow Builder
   const [brandName, setBrandName] = useState(profile?.displayName || '');

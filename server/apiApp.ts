@@ -6,6 +6,7 @@ import { requireAuth, type AuthenticatedRequest } from './lib/auth';
 import {
   isCamPayConfigured,
   initiateCamPayCollect,
+  initiateCamPayPaymentLink,
   checkCamPayStatus,
   initiateCamPayWithdraw,
   verifyCamPayWebhookSignature,
@@ -96,6 +97,39 @@ export function createApiApp(): express.Express {
     }
   });
 
+  // Auto-cached Live Cultural Feed Sync (Public read-through cache for Home Feed)
+  let cachedPulse: { catalysts: unknown[]; actorUsed: string; cachedAt: number } | null = null;
+  app.get('/api/feed/pulse', async (_req, res) => {
+    try {
+      const now = Date.now();
+      if (cachedPulse && now - cachedPulse.cachedAt < 10 * 60 * 1000 && cachedPulse.catalysts.length > 0) {
+        res.json({ ...cachedPulse, fromCache: true });
+        return;
+      }
+      const result = await runCulturalPulsePipeline(['Cameroon Music', 'Douala Creators', 'Afropop']);
+      if (result.catalysts.length > 0) {
+        cachedPulse = {
+          catalysts: result.catalysts,
+          actorUsed: result.actorUsed,
+          cachedAt: now,
+        };
+      }
+      res.json({
+        catalysts: result.catalysts,
+        actorUsed: result.actorUsed,
+        cachedAt: now,
+        fromCache: false,
+      });
+    } catch {
+      res.json({
+        catalysts: cachedPulse?.catalysts || [],
+        actorUsed: cachedPulse?.actorUsed || 'none',
+        cachedAt: Date.now(),
+        fromCache: true,
+      });
+    }
+  });
+
   // Unified Cultural Pulse & Disadvantage Agent (Protected)
   app.post('/api/agents/cultural-pulse', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
@@ -116,6 +150,13 @@ export function createApiApp(): express.Express {
           missingKeys: result.missingKeys,
         });
         return;
+      }
+      if (result.catalysts.length > 0) {
+        cachedPulse = {
+          catalysts: result.catalysts,
+          actorUsed: result.actorUsed,
+          cachedAt: Date.now(),
+        };
       }
       res.json(result);
     } catch (err) {
@@ -284,6 +325,72 @@ export function createApiApp(): express.Express {
     } catch (err) {
       res.status(502).json({
         error: err instanceof Error ? err.message : 'CamPay collection request failed.',
+      });
+    }
+  });
+
+  // CamPay Hosted Payment Link (Supports Bank Cards, MTN MoMo, and Orange Money) (Protected)
+  app.post('/api/payments/campay/payment-link', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!isCamPayConfigured()) {
+        res.status(424).json({
+          error: 'CamPay credentials are not configured on the server.',
+          missingKeys: ['CAMPAY_APP_USERNAME', 'CAMPAY_APP_PASSWORD'],
+        });
+        return;
+      }
+
+      const {
+        amountXAF,
+        phone,
+        description,
+        externalReference,
+        redirectUrl,
+        paymentOptions,
+        firstName,
+        lastName,
+        email,
+      } = req.body || {};
+
+      const amount = Number(amountXAF);
+      if (!Number.isFinite(amount) || amount < 100) {
+        res.status(400).json({ error: 'Minimum transaction amount is 100 XAF.' });
+        return;
+      }
+
+      const fallbackOrigin = process.env.APP_URL || 'https://crippomarket.vercel.app';
+      let safeRedirect = fallbackOrigin;
+      if (typeof redirectUrl === 'string' && redirectUrl.trim()) {
+        try {
+          const parsed = new URL(redirectUrl.trim());
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            safeRedirect = parsed.toString();
+          }
+        } catch {
+          safeRedirect = fallbackOrigin;
+        }
+      }
+
+      const allowedOpts =
+        paymentOptions === 'CARD' || paymentOptions === 'MOMO' ? paymentOptions : 'MOMO,CARD';
+
+      const result = await initiateCamPayPaymentLink({
+        amountXAF: amount,
+        phone: typeof phone === 'string' ? phone : undefined,
+        description: String(description || 'Crippo Deposit'),
+        externalReference: String(externalReference || `crippo_link_${Date.now()}`),
+        redirectUrl: safeRedirect,
+        failureRedirectUrl: safeRedirect,
+        firstName: typeof firstName === 'string' ? firstName : undefined,
+        lastName: typeof lastName === 'string' ? lastName : undefined,
+        email: typeof email === 'string' ? email : req.firebaseUser?.email,
+        paymentOptions: allowedOpts,
+      });
+
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'CamPay payment link generation failed.',
       });
     }
   });

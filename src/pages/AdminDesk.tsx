@@ -82,9 +82,13 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     () => entities.filter((e) => e.kycStatus === 'pending' && e.isClaimed),
     [entities]
   );
-  const pendingMemos = useMemo(
-    () => myMemos.filter((m) => m.status === 'auditing' || m.status === 'pending_payment'),
+  const paidMemos = useMemo(
+    () => myMemos.filter((m) => m.status !== 'pending_payment' && m.paymentCompleted !== false),
     [myMemos]
+  );
+  const pendingMemos = useMemo(
+    () => paidMemos.filter((m) => m.status === 'auditing'),
+    [paidMemos]
   );
   const volatilityAlerts = useMemo(
     () => catalysts.filter((c) => c.sentiment === 'risk_alert' || Math.abs(c.priceImpactPct) >= 10),
@@ -700,15 +704,14 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             creatorUid: user?.uid || 'admin',
             entityName: p.entityName,
             topicCategory: p.topicCategory,
+            pollType: 'yes_no',
             question: p.question,
             resolutionSource: p.resolutionSource,
             aiProbability: p.aiProbability,
             reasoning: p.reasoning,
-            yesPriceXAF: p.yesPriceXAF,
-            noPriceXAF: p.noPriceXAF,
-            yesVotes: Math.max(1, p.yesPriceXAF),
-            noVotes: Math.max(1, p.noPriceXAF),
-            totalVolumeXAF: 0,
+            yesVotes: 0,
+            noVotes: 0,
+            votedUids: [],
             endsAt: new Date(p.endsAt).toISOString(),
             status: 'open',
             isPublic: true,
@@ -716,7 +719,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           });
           minted++;
         }
-        showToast('Trend AI Minted', `${minted} Yes/No cultural prediction contracts live.`);
+        showToast('Fan Polls Minted', `${minted} free Yes/No fan voting polls published.`);
       }
     } catch (err: unknown) {
       const er = err as Error & { missingKeys?: string[] };
@@ -948,33 +951,56 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             )}
           </div>
 
-          {/* Paid Memos Queue */}
+          {/* Paid Memos Queue (Strictly Payment-Verified Applications Only) */}
           <div className="border-t border-outline-variant/25 pt-6 flex flex-col gap-3">
             <h2 className="font-headline-sm text-on-surface font-bold">
-              Paid Listing Memos ({myMemos.length})
+              Paid Creator Applications &amp; Memos ({paidMemos.length})
             </h2>
-            {myMemos.length === 0 ? (
-              <p className="font-body-sm text-on-surface-variant">No paid memos submitted yet.</p>
+            {paidMemos.length === 0 ? (
+              <p className="font-body-sm text-on-surface-variant">
+                No payment-verified creator applications submitted yet.
+              </p>
             ) : (
               <div className="divide-y divide-outline-variant/25">
-                {myMemos.map((m) => (
+                {paidMemos.map((m) => (
                   <div
                     key={m.id}
-                    className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    className="py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-label-md font-bold text-on-surface">{m.stageName}</span>
+                        {m.fullName && (
+                          <span className="font-body-sm text-on-surface-variant">({m.fullName})</span>
+                        )}
                         <span className="px-2 py-0.5 rounded bg-secondary-fixed text-secondary font-label-xs uppercase">
                           {m.status}
                         </span>
-                        <span className="font-mono-num text-[12px] text-on-tertiary-container">
-                          {m.feeXAF.toLocaleString()} XAF
+                        <span className="font-mono-num text-[12px] text-on-tertiary-container font-bold">
+                          Paid {m.feeXAF.toLocaleString()} XAF → {m.recipientNumber || '672638094'}
                         </span>
                       </div>
-                      <p className="font-body-sm text-on-surface-variant mt-0.5">{m.platformLink}</p>
+                      <p className="font-body-sm text-on-surface-variant truncate">
+                        Channel: {m.platformLink}
+                        {m.paymentReference ? ` · Ref: ${m.paymentReference}` : ''}
+                      </p>
+                      {m.socialAccounts && (
+                        <p className="font-body-sm text-on-surface">
+                          <strong>Socials:</strong> {m.socialAccounts}
+                        </p>
+                      )}
+                      {m.shortBio && (
+                        <p className="font-body-sm text-on-surface-variant">
+                          <strong className="text-on-surface">Bio:</strong> {m.shortBio}
+                        </p>
+                      )}
+                      {m.motivation && (
+                        <p className="font-body-sm text-on-surface-variant">
+                          <strong className="text-on-surface">Why Crippo:</strong> {m.motivation}
+                        </p>
+                      )}
                       {m.auditSummary && (
-                        <p className="font-body-sm text-on-surface mt-1">{m.auditSummary}</p>
+                        <p className="font-body-sm text-secondary mt-1">{m.auditSummary}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

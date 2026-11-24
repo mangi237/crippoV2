@@ -148,6 +148,60 @@ export async function initiateCamPayWithdraw(input: {
   return (await resp.json()) as { reference: string; status: string };
 }
 
+export async function initiateCamPayPaymentLink(input: {
+  amountXAF: number;
+  phone?: string;
+  description: string;
+  externalReference: string;
+  redirectUrl: string;
+  failureRedirectUrl?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  paymentOptions?: 'MOMO' | 'CARD' | 'MOMO,CARD';
+}): Promise<{ link: string; reference: string }> {
+  const token = await getCamPayAccessToken();
+  const baseUrl = getCamPayBaseUrl();
+  const normalizedPhone = input.phone ? input.phone.replace(/\D/g, '') : '';
+
+  const payload: Record<string, string> = {
+    amount: String(Math.round(input.amountXAF)),
+    currency: 'XAF',
+    description: input.description.slice(0, 140),
+    external_reference: input.externalReference,
+    redirect_url: input.redirectUrl,
+    failure_redirect_url: input.failureRedirectUrl || input.redirectUrl,
+    payment_options: input.paymentOptions || 'MOMO,CARD',
+  };
+
+  if (/^2376[0-9]{8}$/.test(normalizedPhone)) {
+    payload.from = normalizedPhone;
+  }
+  if (input.firstName) payload.first_name = input.firstName.slice(0, 60);
+  if (input.lastName) payload.last_name = input.lastName.slice(0, 60);
+  if (input.email) payload.email = input.email.slice(0, 140);
+
+  const resp = await fetch(`${baseUrl}/get_payment_link/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Token ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`CamPay payment link error (${resp.status}): ${errText}`);
+  }
+
+  const data = (await resp.json()) as { link?: string; reference?: string };
+  if (!data.link || !data.reference) {
+    throw new Error('CamPay did not return a valid payment link and reference.');
+  }
+  return { link: data.link, reference: data.reference };
+}
+
 export function verifyCamPayWebhookSignature(rawBody: string, signatureHeader: string | undefined): boolean {
   const webhookKey = process.env.CAMPAY_WEBHOOK_KEY;
   if (!webhookKey || !signatureHeader) return false;

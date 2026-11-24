@@ -23,6 +23,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
     races,
     myMemos,
     isAdmin,
+    isVerifiedCreator,
     claimedEntity,
     isVerifiedAgency,
     showToast,
@@ -83,11 +84,21 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   const [affMessage, setAffMessage] = useState('');
   const [sendingAff, setSendingAff] = useState(false);
 
-  // Paid Memo States
+  // Paid Memo States (Submitted to Admin ONLY after CamPay settlement)
+  const [memoTier, setMemoTier] = useState<'fan_2000' | 'fast_track_5000'>('fast_track_5000');
+  const [memoFullName, setMemoFullName] = useState(profile?.displayName || '');
   const [memoStageName, setMemoStageName] = useState('');
   const [memoLink, setMemoLink] = useState('');
+  const [memoSocialAccounts, setMemoSocialAccounts] = useState('');
+  const [memoShortBio, setMemoShortBio] = useState('');
+  const [memoMotivation, setMemoMotivation] = useState('');
   const [memoPhone, setMemoPhone] = useState(privateInfo?.phone || '2376');
   const [memoBusy, setMemoBusy] = useState(false);
+
+  const paidMyMemos = useMemo(
+    () => myMemos.filter((m) => m.status !== 'pending_payment' && m.paymentCompleted !== false),
+    [myMemos]
+  );
 
   useEffect(() => {
     if (!selectedEntityId) {
@@ -440,8 +451,19 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
       showToast('Invalid MoMo Line', 'Use Cameroon format 2376XXXXXXXX.', 'error');
       return;
     }
-    if (!stageName.trim() || link.trim().length < 5) {
-      showToast('Missing Details', 'Enter stage name and channel URL.', 'error');
+    if (
+      !memoFullName.trim() ||
+      !stageName.trim() ||
+      link.trim().length < 5 ||
+      !memoSocialAccounts.trim() ||
+      !memoShortBio.trim() ||
+      !memoMotivation.trim()
+    ) {
+      showToast(
+        'Missing Application Details',
+        'Complete Full Name, Stage Name, Social Accounts, Primary URL, Short Bio, and Motivation.',
+        'error'
+      );
       return;
     }
 
@@ -458,7 +480,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
           body: JSON.stringify({
             amountXAF: feeXAF,
             phone: cleanPhone,
-            description: `Crippo ${tier === 'fast_track_5000' ? 'Creator Fast-Track' : 'Fan'} Memo (${stageName.trim()})`,
+            description: `Crippo Creator Memo to 672638094 (${stageName.trim()})`,
             externalReference: paymentId,
           }),
         }
@@ -478,8 +500,8 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
       });
 
       showToast(
-        'Confirm USSD on Phone',
-        `Authorize ${feeXAF.toLocaleString()} XAF (${resp.ussd_code || '*126#'}). Running AI Memo Audit...`,
+        'Confirm USSD to 672638094',
+        `Authorize ${feeXAF.toLocaleString()} XAF (${resp.ussd_code || '*126#'}). Application submits after confirmation.`,
         'info'
       );
 
@@ -493,9 +515,11 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
           settled = true;
           break;
         }
-        if (check.status === 'FAILED') throw new Error('CamPay payment declined.');
+        if (check.status === 'FAILED') throw new Error('CamPay payment declined. Memo application was not submitted.');
       }
-      if (!settled) throw new Error('CamPay USSD timed out waiting for confirmation.');
+      if (!settled) {
+        throw new Error('CamPay USSD timed out. Complete payment to submit your Creator Memo.');
+      }
 
       await updateDoc(doc(db, 'payments', paymentId), {
         status: 'SUCCESSFUL',
@@ -514,11 +538,18 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
         }
       );
 
+      // Strictly create the memo ONLY AFTER CamPay confirms payment
       await setDoc(doc(db, 'memos', memoId), {
         id: memoId,
         requesterUid: user.uid,
-        stageName: stageName.trim(),
-        platformLink: link.trim(),
+        fullName: memoFullName.trim().slice(0, 120),
+        stageName: stageName.trim().slice(0, 100),
+        platformLink: link.trim().slice(0, 400),
+        socialAccounts: memoSocialAccounts.trim().slice(0, 400),
+        shortBio: memoShortBio.trim().slice(0, 600),
+        motivation: memoMotivation.trim().slice(0, 800),
+        recipientNumber: '672638094',
+        paymentCompleted: true,
         tier,
         feeXAF,
         paymentReference: resp.reference,
@@ -527,9 +558,13 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
         createdAt: serverTimestamp(),
       });
 
+      setMemoFullName('');
       setMemoStageName('');
       setMemoLink('');
-      showToast('Paid Memo Submitted', 'Payment settled & AI audit attached for Admin approval.');
+      setMemoSocialAccounts('');
+      setMemoShortBio('');
+      setMemoMotivation('');
+      showToast('Paid Memo Submitted', 'Payment to 672638094 confirmed & application sent to Admin Desk.');
     } catch (err: unknown) {
       const er = err as Error & { missingKeys?: string[] };
       if (isAdmin && er.missingKeys?.length) onOpenApiSetup();
@@ -870,12 +905,14 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                           Launch a Project Raise
                         </Link>
                       </VerifiedCreatorOnly>
-                      <Link
-                        to="/brands"
-                        className="py-3 px-4 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-bold hover:border-secondary"
-                      >
-                        Brands Hub
-                      </Link>
+                      {(isVerifiedCreator || isAdmin) && (
+                        <Link
+                          to="/brands"
+                          className="py-3 px-4 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-bold hover:border-secondary"
+                        >
+                          Brands Hub
+                        </Link>
+                      )}
                     </div>
                   ) : isOwnPending ? (
                     <div className="py-2 border-l-2 border-secondary pl-3 text-[12px] text-on-surface-variant">
@@ -1129,82 +1166,165 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
           )}
         </div>
       ) : viewTab === 'memo' ? (
-        /* ================= FAN / CREATOR MEMO REQUEST (2,000 FCFA, BORDERLESS) ================= */
+        /* ================= CREATOR VERIFICATION / REQUEST A MEMO (STRICT POST-PAYMENT) ================= */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void executePaidMemo('fan_2000', memoStageName, memoLink);
+              void executePaidMemo(memoTier, memoStageName, memoLink);
             }}
             className="lg:col-span-7 flex flex-col gap-4"
           >
             <div>
               <span className="font-label-xs uppercase text-secondary font-bold">
-                Crippo Underwriting Memo · 2,000 FCFA
+                Creator Application &amp; Underwriting Memo
               </span>
               <h2 className="font-headline-sm text-on-surface font-bold mt-1">
-                Request an Underwriting Memo
+                Request a Memo (Creator Verification)
               </h2>
               <p className="font-body-sm text-on-surface-variant mt-1">
-                Are you a rising creator or supporter wanting an artist listed on Crippo? Submit their channel for valuation &amp; Admin review.
+                Submit your full details below and pay the underwriting fee to MTN MoMo{' '}
+                <strong className="font-mono-num text-on-surface">672638094</strong>. Applications are forwarded to Admin review only after payment is confirmed.
               </p>
             </div>
 
-            <div className="py-2.5 border-t border-b border-outline-variant/25 flex items-center justify-between tabular-nums">
-              <span className="font-label-md font-bold text-on-surface">Audit Memo Fee</span>
-              <span className="font-ticker-val font-bold text-secondary">2,000 FCFA (CamPay)</span>
+            <div className="grid grid-cols-2 gap-2 border-b border-outline-variant/25 pb-3">
+              <button
+                type="button"
+                onClick={() => setMemoTier('fan_2000')}
+                className={`py-2.5 px-3 rounded-xl font-label-xs uppercase font-bold border transition-colors ${
+                  memoTier === 'fan_2000'
+                    ? 'bg-secondary text-white border-secondary'
+                    : 'border-outline-variant/40 text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                Standard Audit · 2,000 FCFA
+              </button>
+              <button
+                type="button"
+                onClick={() => setMemoTier('fast_track_5000')}
+                className={`py-2.5 px-3 rounded-xl font-label-xs uppercase font-bold border transition-colors ${
+                  memoTier === 'fast_track_5000'
+                    ? 'bg-secondary text-white border-secondary'
+                    : 'border-outline-variant/40 text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                Fast-Track Creator · 5,000 FCFA
+              </button>
             </div>
 
-            <input
-              type="text"
-              required
-              value={memoStageName}
-              onChange={(e) => setMemoStageName(e.target.value)}
-              placeholder="Creator Stage Name (e.g. Mimie / Blanche Bailly)"
-              className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
-            />
+            <div className="py-2.5 border-l-2 border-secondary pl-3.5 text-[12px] text-on-surface-variant">
+              <strong className="text-on-surface block">
+                Payment Verification Gate — Pay to 672638094
+              </strong>
+              Authorize{' '}
+              <strong className="font-mono-num text-secondary">
+                {memoTier === 'fast_track_5000' ? '5,000 FCFA' : '2,000 FCFA'}
+              </strong>{' '}
+              to <strong className="font-mono-num text-on-surface">672638094</strong> via CamPay USSD below. Unpaid drafts are never queued in the Admin Dashboard.
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                type="text"
+                required
+                value={memoFullName}
+                onChange={(e) => setMemoFullName(e.target.value)}
+                placeholder="Full Name (Legal Name)"
+                className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+              />
+              <input
+                type="text"
+                required
+                value={memoStageName}
+                onChange={(e) => setMemoStageName(e.target.value)}
+                placeholder="Stage Name (e.g. Mimie / Blanche Bailly)"
+                className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+              />
+            </div>
+
             <input
               type="url"
               required
               value={memoLink}
               onChange={(e) => setMemoLink(e.target.value)}
-              placeholder="https://youtube.com/@artist or TikTok URL"
+              placeholder="Primary Channel URL (https://youtube.com/@artist or TikTok URL)"
               className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
             />
+
             <input
-              type="tel"
+              type="text"
               required
-              value={memoPhone}
-              onChange={(e) => setMemoPhone(e.target.value)}
-              placeholder="237677821940"
-              className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num text-on-surface"
+              value={memoSocialAccounts}
+              onChange={(e) => setMemoSocialAccounts(e.target.value)}
+              placeholder="Social Media Accounts (e.g. TikTok @handle, IG @handle, YouTube)"
+              className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
             />
+
+            <textarea
+              rows={2}
+              required
+              value={memoShortBio}
+              onChange={(e) => setMemoShortBio(e.target.value)}
+              placeholder="Short Bio (genre, city, milestones, audience overview)..."
+              className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+            />
+
+            <textarea
+              rows={3}
+              required
+              value={memoMotivation}
+              onChange={(e) => setMemoMotivation(e.target.value)}
+              placeholder="Why do you think you deserve to be on the platform?"
+              className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+            />
+
+            <div className="flex flex-col gap-1">
+              <label className="font-label-xs uppercase text-on-surface-variant">
+                Your Cameroon MoMo Line to Authorize USSD (+237)
+              </label>
+              <input
+                type="tel"
+                required
+                value={memoPhone}
+                onChange={(e) => setMemoPhone(e.target.value)}
+                placeholder="237677821940"
+                className="px-3.5 py-3 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num text-on-surface"
+              />
+            </div>
 
             <button
               type="submit"
               disabled={memoBusy}
               className="w-full py-3.5 rounded-xl bg-secondary text-white font-label-md font-bold uppercase tracking-wider disabled:opacity-60"
             >
-              {memoBusy ? 'Processing CamPay...' : 'Pay 2,000 FCFA & Submit Memo'}
+              {memoBusy
+                ? 'Waiting for CamPay Confirmation...'
+                : `Pay ${memoTier === 'fast_track_5000' ? '5,000' : '2,000'} FCFA to 672638094 & Submit`}
             </button>
           </form>
 
           <div className="lg:col-span-5 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-3">
             <h3 className="font-headline-sm text-on-surface font-bold">
-              Submitted Audit Memos ({myMemos.length})
+              Confirmed Applications ({paidMyMemos.length})
             </h3>
-            {myMemos.length === 0 ? (
+            {paidMyMemos.length === 0 ? (
               <p className="font-body-sm text-on-surface-variant">
-                No memo audits requested yet. Payments trigger CamPay USSD + catalog scoring for Admin approval.
+                No paid memo audits submitted yet. Only applications with confirmed payment to 672638094 appear here and in the Admin queue.
               </p>
             ) : (
               <div className="divide-y divide-outline-variant/25">
-                {myMemos.map((m) => (
+                {paidMyMemos.map((m) => (
                   <div key={m.id} className="py-3 text-[12px]">
                     <div className="flex justify-between font-bold">
                       <span>{m.stageName} ({m.feeXAF.toLocaleString()} XAF)</span>
                       <span className="uppercase text-secondary">{m.status}</span>
                     </div>
+                    {m.fullName && (
+                      <p className="text-on-surface-variant mt-0.5">
+                        {m.fullName} · {m.socialAccounts}
+                      </p>
+                    )}
                     {m.auditSummary && (
                       <p className="text-on-surface-variant mt-1">{m.auditSummary}</p>
                     )}
@@ -1420,20 +1540,28 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
               e.preventDefault();
               void executePaidMemo('fast_track_5000', memoStageName, memoLink);
             }}
-            className="lg:col-span-5 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-4"
+            className="lg:col-span-5 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-3"
           >
             <div>
               <span className="font-label-xs uppercase text-secondary font-bold">
-                Fast-Track Creator Listing (5,000 FCFA)
+                Fast-Track Creator Listing (5,000 FCFA to 672638094)
               </span>
               <h3 className="font-headline-sm text-on-surface font-bold mt-1">
                 Unlisted Creator? Fast-Track Your Dossier
               </h3>
               <p className="font-body-sm text-on-surface-variant mt-0.5">
-                Priority catalog audit to list and pre-approve your creator channel for Raise issuance.
+                Send 5,000 FCFA to <strong className="font-mono-num text-on-surface">672638094</strong> via CamPay. Your dossier enters Admin review only after payment settles.
               </p>
             </div>
 
+            <input
+              type="text"
+              required
+              value={memoFullName}
+              onChange={(e) => setMemoFullName(e.target.value)}
+              placeholder="Your Full Legal Name"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+            />
             <input
               type="text"
               required
@@ -1451,6 +1579,30 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
               className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
             />
             <input
+              type="text"
+              required
+              value={memoSocialAccounts}
+              onChange={(e) => setMemoSocialAccounts(e.target.value)}
+              placeholder="Social Media Accounts (@tiktok, @instagram)"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+            />
+            <textarea
+              rows={2}
+              required
+              value={memoShortBio}
+              onChange={(e) => setMemoShortBio(e.target.value)}
+              placeholder="Short Bio..."
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+            />
+            <textarea
+              rows={2}
+              required
+              value={memoMotivation}
+              onChange={(e) => setMemoMotivation(e.target.value)}
+              placeholder="Why do you think you deserve to be on the platform?"
+              className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface"
+            />
+            <input
               type="tel"
               required
               value={memoPhone}
@@ -1464,7 +1616,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
               disabled={memoBusy}
               className="w-full py-3 rounded-xl bg-primary-container text-white font-label-md font-bold uppercase tracking-wider disabled:opacity-60"
             >
-              {memoBusy ? 'Processing CamPay...' : 'Pay 5,000 FCFA Fast-Track Audit'}
+              {memoBusy ? 'Waiting for CamPay...' : 'Pay 5,000 FCFA to 672638094 & Submit'}
             </button>
           </form>
         </div>

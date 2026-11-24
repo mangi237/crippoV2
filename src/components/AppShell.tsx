@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useMarket } from '../contexts/MarketContext';
 import { CrippoLogo } from './CrippoLogo';
+import { WalletModal } from './WalletModal';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, profile, signOut } = useAuth();
@@ -18,8 +19,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     searchQuery,
     setSearchQuery,
     toast,
+    showToast,
     dismissToast,
     isAdmin,
+    isVerifiedCreator,
     canLaunchRace,
     markNotificationRead,
     acceptRaiseOffer,
@@ -29,9 +32,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
   const isAuthPage = location.pathname === '/auth' || location.pathname === '/onboarding';
+  const canAccessBrands = Boolean(isVerifiedCreator || isAdmin);
 
   const openRacesCount = races.filter((r) => r.status === 'open').length;
 
@@ -43,23 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Strict Role-Based Navigation (Creators replaces standalone Memo; Launch a Race hidden unless verified unaffiliated creator/agency/admin)
-  const desktopNav = [
-    { path: '/', label: lang === 'fr' ? 'Marché' : 'Market Feed' },
-    { path: '/races', label: lang === 'fr' ? 'Projets (Races)' : 'Raises' },
-    { path: '/creators', label: lang === 'fr' ? 'Créateurs' : 'Creators' },
-    ...(user
-      ? [
-          { path: '/trades', label: lang === 'fr' ? 'Mes Trades' : 'My Trades' },
-          { path: '/brands', label: lang === 'fr' ? 'Marques' : 'Brands' },
-        ]
-      : []),
-    ...(canLaunchRace
-      ? [{ path: '/launch-race', label: lang === 'fr' ? 'Lancer un Projet' : 'Launch a Raise' }]
-      : []),
-    ...(isAdmin ? [{ path: '/admin', label: 'Master Admin' }] : []),
-  ];
-
+  // Strict Role-Based Sidebar Navigation (Single vertical sidebar on desktop; Brands Hub strictly restricted to verified creators & admin)
   const sidebarDesks: Array<{
     path: string;
     label: string;
@@ -72,7 +61,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ...(user
       ? [
           { path: '/trades', label: lang === 'fr' ? 'Mes Trades' : 'My Trades & Timers' },
-          { path: '/brands', label: lang === 'fr' ? 'Partenariats Marques' : 'Brands Hub' },
+          ...(canAccessBrands
+            ? [{ path: '/brands', label: lang === 'fr' ? 'Partenariats Marques' : 'Brands Hub' }]
+            : []),
           { path: '/profile', label: lang === 'fr' ? 'Mon Profil' : 'My Profile' },
         ]
       : []),
@@ -131,95 +122,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-surface text-on-surface flex flex-col">
-      {/* ================= DESKTOP HEADER (>= 1024px) ================= */}
-      <header className="hidden lg:block fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest border-b border-outline-variant/40">
-        <div className="w-full px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 shrink-0">
-            <Link to="/" className="flex items-center gap-2.5">
-              <CrippoLogo size={34} />
-              <span className="font-headline-sm tracking-tight text-on-surface font-bold">CRIPPO</span>
-            </Link>
-          </div>
-
-          <div className="flex-1 max-w-md">
-            <div className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-secondary">
-              <span className="material-symbols-outlined text-outline text-[18px]">search</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={
-                  lang === 'fr'
-                    ? 'Rechercher projets, créateurs, actualités...'
-                    : 'Search Raises, Creators, News...'
-                }
-                className="w-full bg-transparent text-body-sm text-on-surface placeholder:text-outline outline-none"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="text-outline hover:text-on-surface"
-                >
-                  <span className="material-symbols-outlined text-[16px]">close</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Header Actions: ONLY Notifications icon & Minimalist Black Rounded-Rectangle Profile icon */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setNotifOpen((o) => !o)}
-              aria-label="Notifications"
-              className="relative w-9 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container flex items-center justify-center text-on-surface border border-outline-variant/30 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
-              {totalNotifBadge > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-secondary text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
-                  {totalNotifBadge}
-                </span>
-              )}
-            </button>
-
-            <Link
-              to={user ? '/profile' : `/auth?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
-              aria-label={user ? 'My Profile' : 'Sign In'}
-              title={user ? profile?.displayName || user.email || 'Profile' : 'Sign In / Get Started'}
-              className="w-9 h-9 rounded-lg bg-black text-white border border-zinc-800 hover:bg-zinc-900 flex items-center justify-center transition-colors shrink-0"
-            >
-              <span className="material-symbols-outlined text-[18px]">person</span>
-            </Link>
-          </div>
-        </div>
-
-        {/* Subnavigation Row */}
-        <div className="w-full px-6 h-10 bg-surface-container-low border-t border-outline-variant/20 flex items-center justify-between overflow-x-auto no-scrollbar">
-          <nav className="flex items-center gap-1 h-full">
-            {desktopNav.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`px-3 h-7 rounded-lg inline-flex items-center font-label-md whitespace-nowrap transition-colors ${
-                  isActive(item.path)
-                    ? 'bg-surface-container-highest text-on-surface font-bold'
-                    : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="hidden xl:flex items-center gap-4 shrink-0">
-            <span className="font-label-xs text-secondary uppercase tabular-nums">
-              {openRacesCount} OPEN RAISES
-            </span>
-          </div>
-        </div>
-      </header>
-
       {/* ================= MOBILE HEADER (< 1024px) ================= */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 pt-safe bg-surface-container-lowest/95 backdrop-blur-xl border-b border-outline-variant/30">
         <div className="h-14 px-3.5 flex items-center justify-between gap-2">
@@ -230,7 +132,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          {/* Mobile Header Actions: ONLY Notifications icon & Minimalist Black Rounded-Rectangle Profile icon */}
+          {/* Mobile Header Actions: Notifications icon & Minimalist Black Rounded-Rectangle Profile icon */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -256,14 +158,61 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* ================= DESKTOP LEFT SIDEBAR (256px) ================= */}
-      <aside className="fixed left-0 top-[6.5rem] h-[calc(100vh-6.5rem)] w-64 bg-surface-container-lowest border-r border-outline-variant/30 z-40 hidden lg:flex flex-col justify-between py-4 px-3">
-        <div className="flex flex-col gap-3">
-          <div className="px-3 flex items-center justify-between">
-            <span className="font-label-xs uppercase tracking-widest text-on-surface-variant">
-              Exchange
-            </span>
+      {/* ================= DESKTOP VERTICAL LEFT SIDEBAR (256px, ONLY NAV ON DESKTOP) ================= */}
+      <aside className="fixed left-0 top-0 h-screen w-64 bg-surface-container-lowest border-r border-outline-variant/30 z-40 hidden lg:flex flex-col justify-between py-4 px-3 overflow-y-auto">
+        <div className="flex flex-col gap-4">
+          {/* Top Brand + Notifications & Minimalist Black Profile Icon */}
+          <div className="px-1.5 flex items-center justify-between gap-2">
+            <Link to="/" className="flex items-center gap-2 shrink-0">
+              <CrippoLogo size={30} />
+              <span className="font-headline-sm tracking-tight text-on-surface font-bold">CRIPPO</span>
+            </Link>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setNotifOpen((o) => !o)}
+                aria-label="Notifications"
+                className="relative w-8 h-8 rounded-lg bg-surface-container-low hover:bg-surface-container flex items-center justify-center text-on-surface border border-outline-variant/30 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">notifications</span>
+                {totalNotifBadge > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[15px] h-4 px-1 rounded-full bg-secondary text-white text-[9px] font-bold flex items-center justify-center tabular-nums">
+                    {totalNotifBadge}
+                  </span>
+                )}
+              </button>
+              <Link
+                to={user ? '/profile' : `/auth?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+                aria-label={user ? 'My Profile' : 'Sign In'}
+                title={user ? profile?.displayName || user.email || 'Profile' : 'Sign In / Get Started'}
+                className="w-8 h-8 rounded-lg bg-black text-white border border-zinc-800 hover:bg-zinc-900 flex items-center justify-center transition-colors shrink-0"
+              >
+                <span className="material-symbols-outlined text-[17px]">person</span>
+              </Link>
+            </div>
           </div>
+
+          {/* Search Input inside Sidebar */}
+          <div className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/40 rounded-xl px-2.5 py-2 focus-within:ring-2 focus-within:ring-secondary">
+            <span className="material-symbols-outlined text-outline text-[17px]">search</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={lang === 'fr' ? 'Rechercher...' : 'Search Raises, Creators...'}
+              className="w-full bg-transparent text-[13px] text-on-surface placeholder:text-outline outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="text-outline hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
+              </button>
+            )}
+          </div>
+
           <nav className="flex flex-col gap-1">
             {sidebarDesks.map((item) => (
               <Link
@@ -288,17 +237,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-1.5 px-3 py-2.5 bg-surface-container-low border border-outline-variant/30 rounded-xl">
-            <div className="flex items-center justify-between">
-              <span className="font-label-xs uppercase text-on-surface-variant">CAMPAY ESCROW</span>
-              <span className="font-ticker-val text-on-tertiary-container">XAF</span>
+        <div className="flex flex-col gap-2.5 pt-4">
+          {user && profile ? (
+            <div className="flex flex-col gap-2 px-3 py-3 bg-surface-container-low border border-outline-variant/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="font-label-xs uppercase text-on-surface-variant">WALLET</span>
+                <span className="font-ticker-val text-on-surface font-bold tabular-nums">
+                  {Number(profile.walletBalanceXAF || 0).toLocaleString()} XAF
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWalletModalOpen(true)}
+                className="w-full py-1.5 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold hover:opacity-95"
+              >
+                {lang === 'fr' ? 'Dépôt / Retrait' : 'Deposit / Withdraw'}
+              </button>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="font-label-xs uppercase text-on-surface-variant">SETTLEMENT</span>
-              <span className="font-label-xs text-on-surface">MOMO / OM</span>
+          ) : (
+            <div className="flex flex-col gap-1.5 px-3 py-2.5 bg-surface-container-low border border-outline-variant/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="font-label-xs uppercase text-on-surface-variant">CAMPAY ESCROW</span>
+                <span className="font-ticker-val text-on-tertiary-container">XAF</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-label-xs uppercase text-on-surface-variant">SETTLEMENT</span>
+                <span className="font-label-xs text-on-surface">MOMO / OM / CARD</span>
+              </div>
             </div>
-          </div>
+          )}
+
           {user ? (
             <button
               type="button"
@@ -515,7 +483,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ================= MAIN CONTENT VIEWPORT ================= */}
       <div className="lg:pl-64 flex-1 flex flex-col bg-surface">
         {/* Horizontal Stock-Style Project Price Ticker Crawl */}
-        <div className="pt-14 lg:pt-[6.5rem]">
+        <div className="pt-14 lg:pt-0">
           <div className="w-full h-9 bg-primary-container text-white border-b border-outline-variant/40 overflow-hidden flex items-center">
             <div className="flex-1 overflow-hidden">
               {tickerEntries.length > 0 ? (
@@ -542,7 +510,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="text-white/30">|</span>
                   <span>XAF CREATOR EQUITIES · DOUALA · YAOUNDE · BUEA</span>
                   <span className="text-white/30">|</span>
-                  <span>MTN MOMO &amp; ORANGE MONEY CLEARING</span>
+                  <span>MTN MOMO, ORANGE MONEY &amp; BANK CARD CLEARING</span>
                 </div>
               )}
             </div>
@@ -573,7 +541,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link to="/" className="hover:text-secondary">Market Feed</Link>
               <Link to="/races" className="hover:text-secondary">Raises</Link>
               <Link to="/creators" className="hover:text-secondary">Creators</Link>
-              <Link to="/brands" className="hover:text-secondary">Brands Hub</Link>
+              {canAccessBrands && (
+                <Link to="/brands" className="hover:text-secondary">Brands Hub</Link>
+              )}
             </div>
           </div>
         </footer>
@@ -672,6 +642,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </aside>
+      )}
+      {walletModalOpen && (
+        <WalletModal
+          onClose={() => setWalletModalOpen(false)}
+          onSuccess={(msg) => showToast('Wallet Updated', msg, 'success')}
+        />
       )}
     </div>
   );
