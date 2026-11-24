@@ -21,7 +21,7 @@ service cloud.firestore {
     function isAdmin() {
       return isVerifiedUser() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == 'mangilerinelasliejr@gmail.com'
+        request.auth.token.email.lower() == 'mangilerinelasliejr@gmail.com'
       );
     }
 
@@ -424,12 +424,12 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
       allow list: if isAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
-      allow create: if isValidId(userId) && isVerifiedUser() && isOwner(userId) &&
+      allow create: if isValidId(userId) && isSignedIn() && isOwner(userId) &&
         isValidUserPublic(incoming(), userId) &&
         incoming().kycStatus == 'none' &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
-      allow update: if isValidId(userId) && isVerifiedUser() &&
+      allow update: if isValidId(userId) && isSignedIn() &&
         isValidUserPublic(incoming(), userId) &&
         incoming().uid == existing().uid &&
         incoming().createdAt == existing().createdAt &&
@@ -448,11 +448,11 @@ service cloud.firestore {
       match /private/{docId} {
         allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
         allow list: if isOwner(userId) && existing().uid == request.auth.uid;
-        allow create: if isValidId(userId) && isValidId(docId) && isVerifiedUser() && isOwner(userId) &&
+        allow create: if isValidId(userId) && isValidId(docId) && isSignedIn() && isOwner(userId) &&
           isValidUserPrivate(incoming(), userId) &&
           incoming().createdAt == request.time &&
           incoming().updatedAt == request.time;
-        allow update: if isValidId(userId) && isValidId(docId) && isVerifiedUser() && isOwner(userId) &&
+        allow update: if isValidId(userId) && isValidId(docId) && isSignedIn() && isOwner(userId) &&
           isValidUserPrivate(incoming(), userId) &&
           incoming().uid == existing().uid &&
           incoming().createdAt == existing().createdAt &&

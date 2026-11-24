@@ -9,17 +9,19 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../services/firebase';
+import { auth, db, googleProvider, handleFirestoreError, logFirestoreError, OperationType } from '../services/firebase';
 import type { MomoProvider, UserPrivate, UserPublic } from '../types/crippo';
 
 interface AuthContextValue {
   user: User | null;
+  emailVerified: boolean;
   profile: UserPublic | null;
   privateInfo: UserPrivate | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
+  refreshUser: () => Promise<boolean>;
   signOut: () => Promise<void>;
   completeOnboarding: (data: {
     displayName: string;
@@ -49,6 +51,7 @@ function generateAnonymousId(uid: string): string {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [profile, setProfile] = useState<UserPublic | null>(null);
   const [privateInfo, setPrivateInfo] = useState<UserPrivate | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubAuth = onAuthStateChanged(auth, (fbUser) => {
       setUser(fbUser);
+      setEmailVerified(Boolean(fbUser?.emailVerified));
       if (unsubProfile) unsubProfile();
       if (unsubPrivate) unsubPrivate();
 
@@ -80,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
         (err) => {
           setLoading(false);
-          handleFirestoreError(err, OperationType.GET, publicPath);
+          logFirestoreError(err, OperationType.GET, publicPath);
         }
       );
 
@@ -90,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setPrivateInfo(snap.exists() ? (snap.data() as UserPrivate) : null);
         },
         (err) => {
-          handleFirestoreError(err, OperationType.GET, privatePath);
+          logFirestoreError(err, OperationType.GET, privatePath);
         }
       );
     });
@@ -115,6 +119,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (cred.user && !cred.user.emailVerified) {
       await sendEmailVerification(cred.user);
     }
+  };
+
+  const refreshUser = async (): Promise<boolean> => {
+    if (!auth.currentUser) return false;
+    await auth.currentUser.reload();
+    await auth.currentUser.getIdToken(true);
+    const verified = Boolean(auth.currentUser.emailVerified);
+    setEmailVerified(verified);
+    return verified;
   };
 
   const signOut = async () => {
@@ -175,12 +188,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
+        emailVerified,
         profile,
         privateInfo,
         loading,
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
+        refreshUser,
         signOut,
         completeOnboarding,
       }}

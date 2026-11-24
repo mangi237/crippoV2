@@ -20,11 +20,13 @@ const INTERESTS = [
 export function AuthOnboarding() {
   const {
     user,
+    emailVerified,
     profile,
     privateInfo,
     signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
+    refreshUser,
     completeOnboarding,
   } = useAuth();
   const { showToast } = useMarket();
@@ -93,6 +95,29 @@ export function AuthOnboarding() {
     return `Trader #${1000 + Math.abs(hash)}`;
   }, [profile, user]);
 
+  const formatFirebaseAuthError = (err: unknown): string => {
+    const raw = (err as { code?: string; message?: string })?.code || (err as Error)?.message || '';
+    if (raw.includes('auth/operation-not-allowed')) {
+      return 'Enable Email/Password and Google sign-in in Firebase Console -> Authentication -> Sign-in method.';
+    }
+    if (raw.includes('auth/unauthorized-domain')) {
+      return 'Add this app domain to Firebase Console -> Authentication -> Settings -> Authorized domains.';
+    }
+    if (raw.includes('auth/email-already-in-use')) {
+      return 'This email is already registered. Switch to Sign In above.';
+    }
+    if (raw.includes('auth/invalid-credential') || raw.includes('auth/wrong-password') || raw.includes('auth/user-not-found')) {
+      return 'Incorrect email or password. Try again or use Forgot Password.';
+    }
+    if (raw.includes('auth/popup-closed-by-user')) {
+      return 'Google sign-in popup was closed before completing.';
+    }
+    if (raw.includes('Missing or insufficient permissions') || raw.includes('permission-denied')) {
+      return 'Database permissions need updating: paste /firestore.rules into Firebase Console -> Firestore Database -> Rules and click Publish.';
+    }
+    return (err as Error)?.message || 'Authentication failed.';
+  };
+
   const handleGoogle = async () => {
     setBusy(true);
     setErrorMsg('');
@@ -103,7 +128,7 @@ export function AuthOnboarding() {
         lang === 'fr' ? 'Confirmez votre ligne Mobile Money.' : 'Confirm your Mobile Money line to finish setup.'
       );
     } catch (err: unknown) {
-      setErrorMsg((err as Error).message || 'Google sign-in failed.');
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
       setBusy(false);
     }
@@ -129,12 +154,12 @@ export function AuthOnboarding() {
         await signUpWithEmail(email.trim(), password);
         setInfoMsg(
           lang === 'fr'
-            ? 'Compte créé ! Cliquez sur le lien de vérification dans votre boîte mail.'
-            : 'Account created! Please click the verification link in your email inbox before continuing.'
+            ? 'Compte créé ! Cliquez sur le lien de vérification dans votre boîte mail, puis cliquez sur Actualiser.'
+            : 'Account created! Open the verification link sent to your email inbox, then click Refresh.'
         );
       }
     } catch (err: unknown) {
-      setErrorMsg((err as Error).message || 'Authentication failed.');
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
       setBusy(false);
     }
@@ -186,13 +211,20 @@ export function AuthOnboarding() {
   const handleRefreshSession = async () => {
     if (!auth.currentUser) return;
     setBusy(true);
-    await auth.currentUser.reload();
-    if (auth.currentUser.emailVerified) {
-      showToast('Email Verified', 'Your Crippo account is verified for XAF Mobile Money.');
-    } else {
-      setErrorMsg('Email is still unverified. Check spam or click the link in your inbox.');
+    setErrorMsg('');
+    try {
+      const verified = await refreshUser();
+      if (verified) {
+        setInfoMsg('');
+        showToast('Email Verified', 'Your Crippo account is verified for XAF Mobile Money.');
+      } else {
+        setErrorMsg('Email is still unverified. Check spam or click the link in your inbox.');
+      }
+    } catch (err: unknown) {
+      setErrorMsg(formatFirebaseAuthError(err));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   const toggleInterest = (tag: string) => {
@@ -204,14 +236,6 @@ export function AuthOnboarding() {
   const handleSaveOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!user.emailVerified) {
-      setErrorMsg(
-        lang === 'fr'
-          ? 'Veuillez vérifier votre adresse email (ou utilisez Google).'
-          : 'Please verify your email address first (or sign in via Google).'
-      );
-      return;
-    }
     if (!displayName.trim()) {
       setErrorMsg(lang === 'fr' ? 'Nom requis.' : 'Full display name is required.');
       return;
@@ -231,7 +255,7 @@ export function AuthOnboarding() {
       );
       navigate(returnTo, { replace: true });
     } catch (err: unknown) {
-      setErrorMsg((err as Error).message || 'Could not save account details.');
+      setErrorMsg(formatFirebaseAuthError(err));
     } finally {
       setBusy(false);
     }
@@ -510,7 +534,7 @@ export function AuthOnboarding() {
           </div>
         ) : (
           <div className="pt-4 border-t border-outline-variant/25 flex flex-col gap-5">
-            {user && !user.emailVerified && (
+            {user && !emailVerified && (
               <div className="p-4 rounded-xl bg-error-container text-on-error-container flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex flex-col gap-0.5">
                   <span className="font-label-md font-bold">

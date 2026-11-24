@@ -2,5 +2,7 @@
   "name": "Crippo",
   "description": "Real-time, AI-underwritten African creator project exchange and brand partnership hub powered by Mobile Money (MTN MoMo & Orange Money via CamPay).",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -10,7 +10,7 @@ import {
   updateDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../services/firebase';
+import { db, handleFirestoreError, logFirestoreError, OperationType } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { apiFetch } from '../services/api';
 import type {
@@ -72,7 +72,7 @@ const MarketContext = createContext<MarketContextValue | undefined>(undefined);
 const ADMIN_EMAIL = 'mangilerinelasliejr@gmail.com';
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
-  const { user, profile } = useAuth();
+  const { user, emailVerified, profile } = useAuth();
   const [races, setRaces] = useState<Race[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [catalysts, setCatalysts] = useState<Catalyst[]>([]);
@@ -91,7 +91,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const isAdmin = Boolean(
-    user?.emailVerified && user?.email?.toLowerCase() === ADMIN_EMAIL
+    emailVerified && user?.email?.toLowerCase() === ADMIN_EMAIL
   );
 
   const claimedEntity = React.useMemo(() => {
@@ -170,31 +170,31 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         const list = snap.docs.map((d) => d.data() as Race);
         setRaces(list);
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'races')
+      (err) => logFirestoreError(err, OperationType.LIST, 'races')
     );
 
     const unsubEntities = onSnapshot(
       query(collection(db, 'entities'), where('isPublic', '==', true), limit(60)),
       (snap) => setEntities(snap.docs.map((d) => d.data() as Entity)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'entities')
+      (err) => logFirestoreError(err, OperationType.LIST, 'entities')
     );
 
     const unsubCatalysts = onSnapshot(
       query(collection(db, 'catalysts'), where('isPublic', '==', true), limit(60)),
       (snap) => setCatalysts(snap.docs.map((d) => d.data() as Catalyst)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'catalysts')
+      (err) => logFirestoreError(err, OperationType.LIST, 'catalysts')
     );
 
     const unsubPredictions = onSnapshot(
       query(collection(db, 'predictions'), where('isPublic', '==', true), limit(30)),
       (snap) => setPredictions(snap.docs.map((d) => d.data() as PredictionMarket)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'predictions')
+      (err) => logFirestoreError(err, OperationType.LIST, 'predictions')
     );
 
     const unsubCampaigns = onSnapshot(
       query(collection(db, 'campaigns'), where('isPublic', '==', true), limit(40)),
       (snap) => setCampaigns(snap.docs.map((d) => d.data() as Campaign)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'campaigns')
+      (err) => logFirestoreError(err, OperationType.LIST, 'campaigns')
     );
 
     return () => {
@@ -222,13 +222,13 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     const unsubMyTrades = onSnapshot(
       query(collection(db, 'trades'), where('buyerUid', '==', user.uid), limit(80)),
       (snap) => setMyTrades(snap.docs.map((d) => d.data() as Trade)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'trades')
+      (err) => logFirestoreError(err, OperationType.LIST, 'trades')
     );
 
     const unsubPublicOrders = onSnapshot(
       query(collection(db, 'trades'), where('isPublicOrderBook', '==', true), limit(80)),
       (snap) => setPublicOrders(snap.docs.map((d) => d.data() as Trade)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'trades')
+      (err) => logFirestoreError(err, OperationType.LIST, 'trades')
     );
 
     const unsubPayments = onSnapshot(
@@ -236,7 +236,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         ? query(collection(db, 'payments'), limit(80))
         : query(collection(db, 'payments'), where('uid', '==', user.uid), limit(80)),
       (snap) => setMyPayments(snap.docs.map((d) => d.data() as Payment)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'payments')
+      (err) => logFirestoreError(err, OperationType.LIST, 'payments')
     );
 
     const unsubDividends = onSnapshot(
@@ -244,7 +244,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         ? query(collection(db, 'dividend_payouts'), limit(80))
         : query(collection(db, 'dividend_payouts'), where('recipientUid', '==', user.uid), limit(80)),
       (snap) => setMyDividends(snap.docs.map((d) => d.data() as DividendPayout)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'dividend_payouts')
+      (err) => logFirestoreError(err, OperationType.LIST, 'dividend_payouts')
     );
 
     const unsubMemos = onSnapshot(
@@ -252,7 +252,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         ? query(collection(db, 'memos'), limit(60))
         : query(collection(db, 'memos'), where('requesterUid', '==', user.uid), limit(40)),
       (snap) => setMyMemos(snap.docs.map((d) => d.data() as Memo)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'memos')
+      (err) => logFirestoreError(err, OperationType.LIST, 'memos')
     );
 
     const unsubNotifs = onSnapshot(
@@ -261,19 +261,19 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         const docs = snap.docs.map((d) => d.data() as NotificationItem);
         setNotifications(docs);
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'notifications')
+      (err) => logFirestoreError(err, OperationType.LIST, 'notifications')
     );
 
     const unsubAffCreator = onSnapshot(
       query(collection(db, 'affiliation_requests'), where('creatorUid', '==', user.uid), limit(30)),
       (snap) => setIncomingAffiliations(snap.docs.map((d) => d.data() as AffiliationRequest)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'affiliation_requests')
+      (err) => logFirestoreError(err, OperationType.LIST, 'affiliation_requests')
     );
 
     const unsubAffAgency = onSnapshot(
       query(collection(db, 'affiliation_requests'), where('agencyUid', '==', user.uid), limit(30)),
       (snap) => setOutgoingAffiliations(snap.docs.map((d) => d.data() as AffiliationRequest)),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'affiliation_requests')
+      (err) => logFirestoreError(err, OperationType.LIST, 'affiliation_requests')
     );
 
     return () => {
