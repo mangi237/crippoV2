@@ -564,7 +564,7 @@ export function Home({ onOpenApiSetup }: HomeProps) {
               const fundedPct = Math.min(
                 100,
                 Math.round((race.sharesSold / Math.max(1, race.totalShares)) * 100)
-              );
+              );a
               const raisedXAF = race.sharesSold * race.currentSharePriceXAF;
               const sharesLeft = Math.max(0, race.totalShares - race.sharesSold);
               const isOpenWindow =

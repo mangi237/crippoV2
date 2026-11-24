@@ -1,8 +1,3 @@
-import dotenv from 'dotenv';
-import { createApiApp } from '../server/apiApp';
-
-dotenv.config();
-
-const app = createApiApp();
+import app from './server-bundle.mjs';
 
 export default app;
