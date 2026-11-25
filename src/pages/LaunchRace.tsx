@@ -896,10 +896,7 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                   className="mt-1 accent-secondary"
                 />
                 <span className="font-body-sm text-on-surface-variant">
-                  I legally attest under Cameroon &amp; OHADA Uniform Act commercial contract law that this offering is a{' '}
-                  <strong>Project Royalty &amp; Revenue-Share Participation</strong> (not personal equity), that I hold 100% of master &amp; neighboring
-                  rights (or label mandate) for this specific project, and authorize Crippo Escrow to administer the {revSharePct}%
-                  revenue share ({pctPerShare}% per unit) for {roiDurationMonths} months.
+I legally attest under Cameroon & OHADA Uniform Act commercial contract law that this offering is a <strong>Project Royalty & Revenue-Share Participation</strong> (not personal equity), that I hold 100% of master & neighboring rights (or label mandate) for this specific project, and authorize Crippo Escrow to administer the {revSharePct}% revenue share ({pctPerShare}% per unit) for {roiDurationMonths} months.
                 </span>
               </label>
 

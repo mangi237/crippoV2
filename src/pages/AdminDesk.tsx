@@ -168,11 +168,11 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     const netCustodyHeldXAF = Math.max(
       0,
       sharePurchaseInflowXAF +
-        walletDepositInflowXAF +
-        brandEscrowInflowXAF -
-        walletWithdrawalOutflowXAF -
-        originationProfitXAF -
-        brandCommissionProfitXAF
+      walletDepositInflowXAF +
+      brandEscrowInflowXAF -
+      walletWithdrawalOutflowXAF -
+      originationProfitXAF -
+      brandCommissionProfitXAF
     );
 
     return {
@@ -254,12 +254,12 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   const sendNotification = async (payload: {
     recipientUid: string;
     type:
-      | 'kyc_approved'
-      | 'kyc_rejected'
-      | 'raise_offer'
-      | 'raise_rejected'
-      | 'memo_status'
-      | 'dividend';
+    | 'kyc_approved'
+    | 'kyc_rejected'
+    | 'raise_offer'
+    | 'raise_rejected'
+    | 'memo_status'
+    | 'dividend';
     title: string;
     message: string;
     raceId?: string;
@@ -1018,21 +1018,16 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           { key: 'clearing', label: 'Royalty & Escrow Clearing' },
           { key: 'entities', label: `Wikipedia Entities (${entities.length})` },
           { key: 'scrapers', label: 'AI Agents & Scrapers' },
-<<<<<<< HEAD
-          { key: 'ledger', label: `Fapshi Ledger (${myPayments.length})` },
-=======
           { key: 'ledger', label: `Custody & Profits (${myPayments.length})` },
->>>>>>> 4e5ede3f150c1a4a1f29d89ec5f4e2646f4abed8
         ].map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setAdminTab(t.key as typeof adminTab)}
-            className={`pb-2.5 font-label-md whitespace-nowrap border-b-2 transition-colors ${
-              adminTab === t.key
+            className={`pb-2.5 font-label-md whitespace-nowrap border-b-2 transition-colors ${adminTab === t.key
                 ? 'border-secondary text-secondary font-bold'
                 : 'border-transparent text-on-surface-variant hover:text-on-surface'
-            }`}
+              }`}
           >
             {t.label}
           </button>
@@ -1396,22 +1391,20 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   <button
                     type="button"
                     onClick={() => setPayoutDeliveryMode('wallet')}
-                    className={`py-2 px-2.5 rounded-xl border font-label-xs uppercase font-bold transition-colors ${
-                      payoutDeliveryMode === 'wallet'
+                    className={`py-2 px-2.5 rounded-xl border font-label-xs uppercase font-bold transition-colors ${payoutDeliveryMode === 'wallet'
                         ? 'border-secondary bg-secondary/15 text-secondary'
                         : 'border-outline-variant/40 text-on-surface-variant'
-                    }`}
+                      }`}
                   >
                     Auto-Credit Wallets
                   </button>
                   <button
                     type="button"
                     onClick={() => setPayoutDeliveryMode('momo')}
-                    className={`py-2 px-2.5 rounded-xl border font-label-xs uppercase font-bold transition-colors ${
-                      payoutDeliveryMode === 'momo'
+                    className={`py-2 px-2.5 rounded-xl border font-label-xs uppercase font-bold transition-colors ${payoutDeliveryMode === 'momo'
                         ? 'border-secondary bg-secondary/15 text-secondary'
                         : 'border-outline-variant/40 text-on-surface-variant'
-                    }`}
+                      }`}
                   >
                     Direct CamPay MoMo
                   </button>
@@ -1425,8 +1418,8 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   {clearingBusy
                     ? 'Running Clearing Agent...'
                     : payoutDeliveryMode === 'momo'
-                    ? 'Clear & Push MoMo Payouts'
-                    : 'Clear & Credit Shareholder Wallets'}
+                      ? 'Clear & Push MoMo Payouts'
+                      : 'Clear & Credit Shareholder Wallets'}
                 </button>
               </div>
             </div>
@@ -1746,12 +1739,6 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         </div>
       )}
 
-<<<<<<< HEAD
-      {/* TAB 5: FAPSHI RESERVE LEDGER */}
-      {adminTab === 'ledger' && (
-        <div className="flex flex-col gap-3">
-          <h2 className="font-headline-sm text-on-surface font-bold">Fapshi Escrow Reserve Ledger</h2>
-=======
       {/* TAB 5: CAMPAY CUSTODY & PLATFORM PROFITS LEDGER */}
       {adminTab === 'ledger' && (
         <div className="flex flex-col gap-6">
@@ -1856,11 +1843,10 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   key={f.id}
                   type="button"
                   onClick={() => setLedgerFilter(f.id)}
-                  className={`px-2.5 py-1 rounded-lg font-label-xs uppercase font-bold border ${
-                    ledgerFilter === f.id
+                  className={`px-2.5 py-1 rounded-lg font-label-xs uppercase font-bold border ${ledgerFilter === f.id
                       ? 'border-secondary bg-secondary text-on-secondary'
                       : 'border-outline-variant/35 text-on-surface-variant'
-                  }`}
+                    }`}
                 >
                   {f.label}
                 </button>
@@ -1868,7 +1854,6 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             </div>
           </div>
 
->>>>>>> 4e5ede3f150c1a4a1f29d89ec5f4e2646f4abed8
           <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/25">
             {filteredPayments.map((p) => (
               <div
@@ -1886,13 +1871,12 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                     {p.amountXAF.toLocaleString()} XAF
                   </span>
                   <span
-                    className={`font-label-xs uppercase font-bold ${
-                      p.status === 'SUCCESSFUL'
+                    className={`font-label-xs uppercase font-bold ${p.status === 'SUCCESSFUL'
                         ? 'text-on-tertiary-container'
                         : p.status === 'FAILED'
-                        ? 'text-error'
-                        : 'text-on-surface-variant'
-                    }`}
+                          ? 'text-error'
+                          : 'text-on-surface-variant'
+                      }`}
                   >
                     {p.status}
                   </span>
