@@ -1,4 +1,10 @@
 import crypto from 'crypto';
+import {
+  initiateFapshiPay,
+  checkFapshiStatus,
+  initiateFapshiPayout,
+  isFapshiConfigured,
+} from './fapshi';
 
 function getCamPayBaseUrl(): string {
   const env = (process.env.CAMPAY_ENV || 'demo').toLowerCase();
@@ -8,44 +14,10 @@ function getCamPayBaseUrl(): string {
 }
 
 export function isCamPayConfigured(): boolean {
-  return Boolean(
+  return isFapshiConfigured() || Boolean(
     process.env.CAMPAY_PERMANENT_TOKEN ||
       (process.env.CAMPAY_APP_USERNAME && process.env.CAMPAY_APP_PASSWORD)
   );
-}
-
-async function getCamPayAccessToken(): Promise<string> {
-  const permanentToken = process.env.CAMPAY_PERMANENT_TOKEN?.trim();
-  if (permanentToken) {
-    return permanentToken;
-  }
-
-  const username = process.env.CAMPAY_APP_USERNAME;
-  const password = process.env.CAMPAY_APP_PASSWORD;
-
-  if (!username || !password) {
-    throw new Error(
-      'CAMPAY_NOT_CONFIGURED: Set CAMPAY_PERMANENT_TOKEN or CAMPAY_APP_USERNAME + CAMPAY_APP_PASSWORD in server environment secrets.'
-    );
-  }
-
-  const baseUrl = getCamPayBaseUrl();
-  const resp = await fetch(`${baseUrl}/token/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`CamPay token error (${resp.status}): ${errText}`);
-  }
-
-  const data = (await resp.json()) as { token?: string };
-  if (!data.token) {
-    throw new Error('CamPay did not return an access token.');
-  }
-  return data.token;
 }
 
 export interface CamPayCollectInput {
@@ -53,6 +25,9 @@ export interface CamPayCollectInput {
   phone: string;
   description: string;
   externalReference: string;
+  email?: string;
+  userId?: string;
+  redirectUrl?: string;
 }
 
 export interface CamPayCollectResult {
@@ -60,44 +35,27 @@ export interface CamPayCollectResult {
   ussd_code?: string;
   operator?: string;
   status: string;
+  link?: string;
 }
 
+/**
+ * Initiates payment using Fapshi's Initiate Pay (hosted checkout link).
+ * Direct pay is not used.
+ */
 export async function initiateCamPayCollect(input: CamPayCollectInput): Promise<CamPayCollectResult> {
-  const token = await getCamPayAccessToken();
-  const baseUrl = getCamPayBaseUrl();
-
-  const normalizedPhone = input.phone.replace(/\D/g, '');
-  const resp = await fetch(`${baseUrl}/collect/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      amount: String(Math.round(input.amountXAF)),
-      currency: 'XAF',
-      from: normalizedPhone,
-      description: input.description.slice(0, 140),
-      external_reference: input.externalReference,
-    }),
+  const res = await initiateFapshiPay({
+    amount: input.amountXAF,
+    email: input.email,
+    userId: input.userId,
+    externalId: input.externalReference,
+    redirectUrl: input.redirectUrl,
+    message: input.description,
   });
 
- if (!resp.ok) {
-  const errText = await resp.text();
-  let detail = errText;
-  try {
-    const errJson = JSON.parse(errText);
-    detail = errJson.failure_code || errJson.error || errJson.message || errText;
-  } catch { /* 保持原始文本 */ }
-  throw new Error(`CamPay collect failed (${resp.status}): ${detail}`);
-}
-
-  const data = (await resp.json()) as CamPayCollectResult;
   return {
-    reference: data.reference,
-    ussd_code: data.ussd_code,
-    operator: data.operator,
-    status: data.status || 'PENDING',
+    reference: res.transId,
+    status: 'CREATED',
+    link: res.link,
   };
 }
 
@@ -111,24 +69,25 @@ export interface CamPayStatusResult {
 }
 
 export async function checkCamPayStatus(reference: string): Promise<CamPayStatusResult> {
-  const token = await getCamPayAccessToken();
-  const baseUrl = getCamPayBaseUrl();
+  const fapshiRes = await checkFapshiStatus(reference);
 
-  const resp = await fetch(`${baseUrl}/transaction/${encodeURIComponent(reference)}/`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Token ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`CamPay status error (${resp.status}): ${errText}`);
+  let mappedStatus: 'PENDING' | 'SUCCESSFUL' | 'FAILED' = 'PENDING';
+  if (fapshiRes.status === 'SUCCESSFUL') {
+    mappedStatus = 'SUCCESSFUL';
+  } else if (fapshiRes.status === 'FAILED' || fapshiRes.status === 'EXPIRED') {
+    mappedStatus = 'FAILED';
+  } else {
+    mappedStatus = 'PENDING';
   }
 
-  const data = (await resp.json()) as CamPayStatusResult;
-  return data;
+  return {
+    reference: fapshiRes.transId,
+    status: mappedStatus,
+    amount: fapshiRes.amount != null ? String(fapshiRes.amount) : undefined,
+    currency: 'XAF',
+    operator: fapshiRes.medium || undefined,
+    external_reference: fapshiRes.externalId || undefined,
+  };
 }
 
 export async function initiateCamPayWithdraw(input: {
@@ -137,30 +96,17 @@ export async function initiateCamPayWithdraw(input: {
   description: string;
   externalReference: string;
 }): Promise<{ reference: string; status: string }> {
-  const token = await getCamPayAccessToken();
-  const baseUrl = getCamPayBaseUrl();
-
-  const normalizedPhone = input.phone.replace(/\D/g, '');
-  const resp = await fetch(`${baseUrl}/withdraw/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      amount: String(Math.round(input.amountXAF)),
-      to: normalizedPhone,
-      description: input.description.slice(0, 140),
-      external_reference: input.externalReference,
-    }),
+  const res = await initiateFapshiPayout({
+    amount: input.amountXAF,
+    phone: input.phone,
+    externalId: input.externalReference,
+    message: input.description,
   });
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`CamPay withdraw error (${resp.status}): ${errText}`);
-  }
-
-  return (await resp.json()) as { reference: string; status: string };
+  return {
+    reference: res.transId,
+    status: 'PENDING',
+  };
 }
 
 export async function initiateCamPayPaymentLink(input: {
@@ -175,51 +121,25 @@ export async function initiateCamPayPaymentLink(input: {
   email?: string;
   paymentOptions?: 'MOMO' | 'CARD' | 'MOMO,CARD';
 }): Promise<{ link: string; reference: string }> {
-  const token = await getCamPayAccessToken();
-  const baseUrl = getCamPayBaseUrl();
-  const normalizedPhone = input.phone ? input.phone.replace(/\D/g, '') : '';
-
-  const payload: Record<string, string> = {
-    amount: String(Math.round(input.amountXAF)),
-    currency: 'XAF',
-    description: input.description.slice(0, 140),
-    external_reference: input.externalReference,
-    redirect_url: input.redirectUrl,
-    failure_redirect_url: input.failureRedirectUrl || input.redirectUrl,
-    payment_options: input.paymentOptions || 'MOMO,CARD',
-  };
-
-  if (/^2376[0-9]{8}$/.test(normalizedPhone)) {
-    payload.from = normalizedPhone;
-  }
-  if (input.firstName) payload.first_name = input.firstName.slice(0, 60);
-  if (input.lastName) payload.last_name = input.lastName.slice(0, 60);
-  if (input.email) payload.email = input.email.slice(0, 140);
-
-  const resp = await fetch(`${baseUrl}/get_payment_link/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
+  const res = await initiateFapshiPay({
+    amount: input.amountXAF,
+    email: input.email,
+    externalId: input.externalReference,
+    redirectUrl: input.redirectUrl,
+    message: input.description,
   });
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`CamPay payment link error (${resp.status}): ${errText}`);
-  }
-
-  const data = (await resp.json()) as { link?: string; reference?: string };
-  if (!data.link || !data.reference) {
-    throw new Error('CamPay did not return a valid payment link and reference.');
-  }
-  return { link: data.link, reference: data.reference };
+  return { link: res.link, reference: res.transId };
 }
 
 export function verifyCamPayWebhookSignature(rawBody: string, signatureHeader: string | undefined): boolean {
-  const webhookKey = process.env.CAMPAY_WEBHOOK_KEY;
+  const webhookKey = process.env.FAPSHI_WEBHOOK_SECRET || process.env.CAMPAY_WEBHOOK_KEY;
   if (!webhookKey || !signatureHeader) return false;
+
+  // Supports both Fapshi x-wh-secret direct token comparison and HMAC
+  if (signatureHeader === webhookKey) {
+    return true;
+  }
 
   const expected = crypto
     .createHmac('sha256', webhookKey)

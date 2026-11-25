@@ -42,6 +42,8 @@ export function createApiApp(): express.Express {
       process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'
     );
     const campayConfigured = isCamPayConfigured();
+    const fapshiConfigured = campayConfigured;
+    const fapshiEnv = (process.env.FAPSHI_ENV || process.env.CAMPAY_ENV || 'sandbox').toLowerCase();
     const youtubeConfigured = Boolean(process.env.YOUTUBE_API_KEY);
     const apifyConfigured = Boolean(process.env.APIFY_API_TOKEN);
     const spotifyConfigured = Boolean(
@@ -53,7 +55,9 @@ export function createApiApp(): express.Express {
       firebaseConfigured,
       geminiConfigured,
       campayConfigured,
-      campayEnv: process.env.CAMPAY_ENV || 'demo',
+      campayEnv: fapshiEnv,
+      fapshiConfigured,
+      fapshiEnv,
       youtubeConfigured,
       apifyConfigured,
       spotifyConfigured,
@@ -361,18 +365,18 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // CamPay Mobile Money Collection (USSD Push) (Protected)
+  // CamPay / Fapshi Mobile Money Collection (Initiate Pay / Hosted Checkout) (Protected)
   app.post('/api/payments/campay/collect', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       if (!isCamPayConfigured()) {
         res.status(424).json({
-          error: 'CamPay Mobile Money credentials are not configured on the server.',
-          missingKeys: ['CAMPAY_APP_USERNAME', 'CAMPAY_APP_PASSWORD'],
+          error: 'Fapshi/CamPay credentials are not configured on the server.',
+          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
         });
         return;
       }
 
-      const { amountXAF, phone, description, externalReference } = req.body || {};
+      const { amountXAF, phone, description, externalReference, email, redirectUrl } = req.body || {};
       const amount = Number(amountXAF);
       const cleanPhone = String(phone || '').replace(/\D/g, '');
 
@@ -380,9 +384,18 @@ export function createApiApp(): express.Express {
         res.status(400).json({ error: 'Minimum transaction amount is 100 XAF.' });
         return;
       }
-      if (!/^2376[0-9]{8}$/.test(cleanPhone)) {
-        res.status(400).json({ error: 'Valid Cameroon Mobile Money number required (2376XXXXXXXX).' });
-        return;
+
+      const fallbackOrigin = process.env.APP_URL || 'https://crippomarket.vercel.app';
+      let safeRedirect = fallbackOrigin;
+      if (typeof redirectUrl === 'string' && redirectUrl.trim()) {
+        try {
+          const parsed = new URL(redirectUrl.trim());
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            safeRedirect = parsed.toString();
+          }
+        } catch {
+          safeRedirect = fallbackOrigin;
+        }
       }
 
       const result = await initiateCamPayCollect({
@@ -390,23 +403,26 @@ export function createApiApp(): express.Express {
         phone: cleanPhone,
         description: String(description || 'Crippo XAF Order'),
         externalReference: String(externalReference || `crippo_${Date.now()}`),
+        email: typeof email === 'string' && email.trim() ? email.trim() : req.firebaseUser?.email,
+        userId: req.firebaseUser?.uid,
+        redirectUrl: safeRedirect,
       });
 
       res.json(result);
     } catch (err) {
       res.status(502).json({
-        error: err instanceof Error ? err.message : 'CamPay collection request failed.',
+        error: err instanceof Error ? err.message : 'Payment collection request failed.',
       });
     }
   });
 
-  // CamPay Hosted Payment Link (Supports Bank Cards, MTN MoMo, and Orange Money) (Protected)
+  // CamPay / Fapshi Hosted Payment Link (Protected)
   app.post('/api/payments/campay/payment-link', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       if (!isCamPayConfigured()) {
         res.status(424).json({
-          error: 'CamPay credentials are not configured on the server.',
-          missingKeys: ['CAMPAY_APP_USERNAME', 'CAMPAY_APP_PASSWORD'],
+          error: 'Fapshi/CamPay credentials are not configured on the server.',
+          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
         });
         return;
       }
@@ -466,13 +482,13 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // CamPay Transaction Status Polling (Protected)
+  // CamPay / Fapshi Transaction Status Polling (Protected)
   app.get('/api/payments/campay/status/:reference', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       if (!isCamPayConfigured()) {
         res.status(424).json({
-          error: 'CamPay Mobile Money credentials are not configured on the server.',
-          missingKeys: ['CAMPAY_APP_USERNAME', 'CAMPAY_APP_PASSWORD'],
+          error: 'Fapshi/CamPay credentials are not configured on the server.',
+          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
         });
         return;
       }
@@ -490,13 +506,13 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // CamPay Disbursement / Payout (Protected)
+  // CamPay / Fapshi Disbursement / Payout (Protected)
   app.post('/api/payments/campay/withdraw', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       if (!isCamPayConfigured()) {
         res.status(424).json({
-          error: 'CamPay Mobile Money credentials are not configured on the server.',
-          missingKeys: ['CAMPAY_APP_USERNAME', 'CAMPAY_APP_PASSWORD'],
+          error: 'Fapshi/CamPay credentials are not configured on the server.',
+          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
         });
         return;
       }
@@ -525,17 +541,21 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // CamPay Webhook Receiver
-  app.post('/api/payments/campay/webhook', (req, res) => {
+  // Fapshi / CamPay Webhook Receiver
+  app.post(['/api/payments/campay/webhook', '/api/payments/fapshi/webhook'], (req, res) => {
     const rawBody = (req as express.Request & { rawBody?: string }).rawBody || JSON.stringify(req.body || {});
-    const sigHeader = req.header('X-CamPay-Signature') || req.header('x-campay-signature');
+    const sigHeader =
+      req.header('x-wh-secret') ||
+      req.header('X-CamPay-Signature') ||
+      req.header('x-campay-signature');
 
-    if (process.env.CAMPAY_WEBHOOK_KEY && !verifyCamPayWebhookSignature(rawBody, sigHeader)) {
-      res.status(401).json({ error: 'Invalid CamPay webhook signature.' });
+    const configuredSecret = process.env.FAPSHI_WEBHOOK_SECRET || process.env.CAMPAY_WEBHOOK_KEY;
+    if (configuredSecret && !verifyCamPayWebhookSignature(rawBody, sigHeader)) {
+      res.status(401).json({ error: 'Invalid webhook signature or secret.' });
       return;
     }
 
-    res.status(200).json({ received: true, reference: req.body?.reference || null });
+    res.status(200).json({ received: true, reference: req.body?.transId || req.body?.reference || null });
   });
 
   return app;

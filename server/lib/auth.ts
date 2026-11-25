@@ -56,8 +56,14 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFi
   };
 }
 
-export interface AuthenticatedRequest extends Request {
+export interface AuthenticatedRequest<
+  P = Record<string, any>,
+  ResBody = any,
+  ReqBody = any,
+  ReqQuery = Record<string, any>
+> extends Request<P, ResBody, ReqBody, ReqQuery> {
   firebaseUser?: VerifiedFirebaseUser;
+  body: ReqBody;
 }
 
 export async function requireAuth(

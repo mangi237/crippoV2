@@ -153,11 +153,11 @@ export function WalletModal({
 
       setStatusMsg(
         lang === 'fr'
-          ? 'Envoi de la demande USSD CamPay...'
-          : `Sending ${depositMethod === 'ORANGE' ? 'Orange Money' : 'MTN MoMo'} USSD prompt...`
+          ? 'Génération de la session de paiement Fapshi...'
+          : `Initiating ${depositMethod === 'ORANGE' ? 'Orange Money' : 'MTN MoMo'} checkout via Fapshi...`
       );
 
-      const resp = await apiFetch<{ reference: string; ussd_code?: string }>(
+      const resp = await apiFetch<{ reference: string; link?: string; ussd_code?: string }>(
         '/api/payments/campay/collect',
         {
           method: 'POST',
@@ -166,6 +166,8 @@ export function WalletModal({
             phone: cleanPhone,
             description: `Crippo Wallet Deposit (${amountXAF.toLocaleString()} XAF)`,
             externalReference: paymentId,
+            redirectUrl: window.location.href,
+            email: user.email || undefined,
           }),
         }
       );
@@ -181,6 +183,23 @@ export function WalletModal({
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      if (resp.link) {
+        setCardCheckout({
+          link: resp.link,
+          reference: resp.reference,
+          paymentId,
+          amount: amountXAF,
+        });
+        setStatusMsg(
+          lang === 'fr'
+            ? 'Ouvrez la page sécurisée Fapshi ci-dessous pour régler, puis cliquez sur Vérifier le Paiement.'
+            : 'Complete your checkout using the secure Fapshi link below, then click Verify Payment.'
+        );
+        window.open(resp.link, '_blank');
+        setBusy(false);
+        return;
+      }
 
       setStatusMsg(
         lang === 'fr'
@@ -521,7 +540,7 @@ export function WalletModal({
             {cardCheckout && (
               <div className="p-4 rounded-xl bg-secondary-fixed/30 border border-secondary/40 flex flex-col gap-3">
                 <p className="font-body-sm text-on-surface">
-                  Secure CamPay card session created (Ref: <span className="font-mono-num">{cardCheckout.reference}</span>).
+                  Secure Fapshi checkout session ready (Ref: <span className="font-mono-num">{cardCheckout.reference}</span>).
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <a
@@ -530,7 +549,7 @@ export function WalletModal({
                     rel="noopener noreferrer"
                     className="flex-1 py-2.5 px-4 rounded-xl bg-secondary text-white font-label-xs uppercase font-bold text-center"
                   >
-                    Open CamPay Card Checkout ↗
+                    Open Fapshi Checkout ↗
                   </a>
                   <button
                     type="button"

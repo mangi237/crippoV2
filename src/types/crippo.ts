@@ -370,6 +370,8 @@ export interface IntegrationStatus {
   geminiConfigured: boolean;
   campayConfigured: boolean;
   campayEnv: string;
+  fapshiConfigured?: boolean;
+  fapshiEnv?: string;
   youtubeConfigured: boolean;
   apifyConfigured: boolean;
   spotifyConfigured: boolean;

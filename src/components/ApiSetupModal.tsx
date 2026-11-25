@@ -17,10 +17,10 @@ export function ApiSetupModal({ onClose }: ApiSetupModalProps) {
 
   const items = [
     {
-      name: 'CamPay Mobile Money (MTN & Orange XAF)',
-      ready: Boolean(status?.campayConfigured),
-      envVars: 'CAMPAY_APP_USERNAME, CAMPAY_APP_PASSWORD, CAMPAY_WEBHOOK_KEY, CAMPAY_ENV=live',
-      note: 'Powers real USSD push collections (/api/collect/) and automated royalty disbursements (/api/withdraw/).',
+      name: 'Fapshi Payments (MTN MoMo & Orange XAF Sandbox)',
+      ready: Boolean(status?.fapshiConfigured || status?.campayConfigured),
+      envVars: 'FAPSHI_API_USER, FAPSHI_API_KEY, FAPSHI_ENV=sandbox',
+      note: 'Configured with Initiate Pay (hosted checkout session) in Sandbox environment.',
     },
     {
       name: 'Apify Web & Social Crawlers',

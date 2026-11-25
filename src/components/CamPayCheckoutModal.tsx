@@ -225,11 +225,11 @@ export function CamPayCheckoutModal({
 
       setStatusMsg(
         lang === 'fr'
-          ? 'Envoi du prompt USSD CamPay en cours...'
-          : 'Initiating CamPay USSD push...'
+          ? 'Génération du paiement sécurisé Fapshi...'
+          : 'Generating secure Fapshi payment session...'
       );
 
-      const resp = await apiFetch<{ reference: string; ussd_code?: string; operator?: string }>(
+      const resp = await apiFetch<{ reference: string; link?: string; ussd_code?: string; operator?: string }>(
         '/api/payments/campay/collect',
         {
           method: 'POST',
@@ -238,6 +238,8 @@ export function CamPayCheckoutModal({
             phone: cleanPhone,
             description: `Crippo: ${race.title} (${shares} shares)`,
             externalReference: paymentId,
+            redirectUrl: window.location.href,
+            email: user.email || undefined,
           }),
         }
       );
@@ -254,6 +256,18 @@ export function CamPayCheckoutModal({
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      if (resp.link) {
+        setCardLinkData({ link: resp.link, reference: resp.reference, paymentId });
+        setStatusMsg(
+          lang === 'fr'
+            ? 'Ouvrez la page de paiement sécurisée Fapshi pour autoriser votre paiement MTN / Orange / Carte, puis cliquez sur Vérifier.'
+            : 'Open the secure Fapshi checkout link below to complete payment via MTN MoMo / Orange Money, then click Verify Settlement.'
+        );
+        window.open(resp.link, '_blank');
+        setSubmitting(false);
+        return;
+      }
 
       setStatusMsg(
         lang === 'fr'
@@ -532,7 +546,7 @@ export function CamPayCheckoutModal({
               rel="noopener noreferrer"
               className="w-full py-2.5 px-4 rounded-xl bg-secondary text-white font-label-xs uppercase font-bold text-center"
             >
-              Open Secure CamPay Card Checkout ↗
+              Open Secure Fapshi Checkout ↗
             </a>
             <button
               type="button"
@@ -540,7 +554,7 @@ export function CamPayCheckoutModal({
               onClick={handleVerifyCardSettlement}
               className="w-full py-2.5 px-4 rounded-xl bg-on-tertiary-container text-white font-label-xs uppercase font-bold disabled:opacity-60"
             >
-              Verify Card Settlement &amp; Allocate Shares
+              Verify Settlement &amp; Allocate Shares
             </button>
           </div>
         )}
