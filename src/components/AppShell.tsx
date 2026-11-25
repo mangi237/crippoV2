@@ -25,6 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     isVerifiedCreator,
     canLaunchRace,
     markNotificationRead,
+    markAllNotificationsRead,
     acceptRaiseOffer,
     acceptAffiliationRequest,
     declineAffiliationRequest,
@@ -298,13 +299,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="w-full max-w-sm bg-surface-container-lowest border-l border-outline-variant h-full p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <h3 className="font-headline-sm text-on-surface font-bold">Notifications</h3>
-              <button
-                type="button"
-                onClick={() => setNotifOpen(false)}
-                className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {unreadNotifCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => markAllNotificationsRead()}
+                    className="text-[11px] font-label-xs uppercase text-secondary font-bold hover:underline"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setNotifOpen(false)}
+                  className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
             </div>
 
             {notifications.length === 0 && myDividends.length === 0 && catalysts.length === 0 ? (
@@ -441,6 +453,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           </button>
                         </div>
                       )}
+
+                      {!canAcceptOffer && !canRespondAff && (
+                        <div className="flex items-center gap-3 pt-0.5">
+                          {n.type === 'kyc_approved' && (
+                            <Link
+                              to="/launch-race"
+                              onClick={() => {
+                                if (!n.read) markNotificationRead(n.id);
+                                setNotifOpen(false);
+                              }}
+                              className="font-label-xs uppercase text-secondary font-bold hover:underline"
+                            >
+                              Launch a Raise →
+                            </Link>
+                          )}
+                          {(n.type === 'raise_offer' || n.type === 'raise_rejected') && n.raceId && (
+                            <Link
+                              to={`/race/${n.raceId}`}
+                              onClick={() => {
+                                if (!n.read) markNotificationRead(n.id);
+                                setNotifOpen(false);
+                              }}
+                              className="font-label-xs uppercase text-secondary font-bold hover:underline"
+                            >
+                              View Raise →
+                            </Link>
+                          )}
+                          {n.type === 'dividend' && (
+                            <Link
+                              to="/trades"
+                              onClick={() => {
+                                if (!n.read) markNotificationRead(n.id);
+                                setNotifOpen(false);
+                              }}
+                              className="font-label-xs uppercase text-on-tertiary-container font-bold hover:underline"
+                            >
+                              View Dividends →
+                            </Link>
+                          )}
+                          {n.type === 'memo_status' && (
+                            <Link
+                              to={n.entityId ? `/creator/${n.entityId}` : '/creators'}
+                              onClick={() => {
+                                if (!n.read) markNotificationRead(n.id);
+                                setNotifOpen(false);
+                              }}
+                              className="font-label-xs uppercase text-secondary font-bold hover:underline"
+                            >
+                              View Creator Index →
+                            </Link>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -487,29 +552,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="w-full h-9 bg-primary-container text-white border-b border-outline-variant/40 overflow-hidden flex items-center">
             <div className="flex-1 overflow-hidden">
               {tickerEntries.length > 0 ? (
-                <div className="animate-ticker flex items-center gap-6 px-4">
+                <div className="animate-ticker flex items-center gap-6 px-4 text-white">
                   {[...tickerEntries, ...tickerEntries].map((item, idx) => (
                     <Link
                       key={`${item.key}_${idx}`}
                       to={item.to}
-                      className="inline-flex items-center gap-2 text-[11px] font-mono-num whitespace-nowrap hover:underline tabular-nums"
+                      className="inline-flex items-center gap-2 text-[11px] font-mono-num whitespace-nowrap hover:underline tabular-nums text-white"
                     >
-                      <span className={item.type === 'mover' ? 'text-secondary-fixed font-semibold' : 'text-white font-semibold'}>
+                      <span className="text-white font-semibold">
                         {item.label}
                       </span>
                       <span className={item.positive ? 'text-[#34D399] font-bold' : 'text-[#F87171] font-bold'}>
                         {item.value}
                       </span>
-                      <span className="text-white/30">|</span>
+                      <span className="text-white/40">|</span>
                     </Link>
                   ))}
                 </div>
               ) : (
-                <div className="animate-ticker flex items-center gap-6 px-4 text-[11px] font-mono-num text-white/85 whitespace-nowrap tabular-nums">
+                <div className="animate-ticker flex items-center gap-6 px-4 text-[11px] font-mono-num text-white whitespace-nowrap tabular-nums">
                   <span>CRIPPO SHARE MARKET · LIVE PROJECT PRICING</span>
-                  <span className="text-white/30">|</span>
+                  <span className="text-white/40">|</span>
                   <span>XAF CREATOR EQUITIES · DOUALA · YAOUNDE · BUEA</span>
-                  <span className="text-white/30">|</span>
+                  <span className="text-white/40">|</span>
                   <span>MTN MOMO, ORANGE MONEY &amp; BANK CARD CLEARING</span>
                 </div>
               )}

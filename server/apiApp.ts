@@ -11,7 +11,7 @@ import {
   initiateCamPayWithdraw,
   verifyCamPayWebhookSignature,
 } from './payments/campay';
-import { underwriteRace } from './agents/underwriterAgent';
+import { underwriteRace, UnderwriteValidationError } from './agents/underwriterAgent';
 import { runCulturalPulsePipeline } from './agents/culturalPulseAgent';
 import { auditCreatorMemo } from './agents/memoAuditAgent';
 import { generateTrendProbabilities } from './agents/trendProbabilityAgent';
@@ -89,11 +89,15 @@ export function createApiApp(): express.Express {
           body.listenerRegion === 'diaspora_mixed' || body.listenerRegion === 'global_eu_us'
             ? body.listenerRegion
             : 'cameroon_africa',
+        preferredSharePriceXAF:
+          typeof body.preferredSharePriceXAF === 'number' ? Number(body.preferredSharePriceXAF) : undefined,
+        wikiGrade: typeof body.wikiGrade === 'string' ? body.wikiGrade : undefined,
       });
 
       res.json(result);
     } catch (err) {
-      res.status(500).json({
+      const status = err instanceof UnderwriteValidationError ? err.statusCode : 500;
+      res.status(status).json({
         error: err instanceof Error ? err.message : 'Underwriting failed.',
       });
     }

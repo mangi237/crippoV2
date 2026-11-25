@@ -45,6 +45,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   // Counter-Terms Modal State (React UI, zero window.prompt)
   const [counterRace, setCounterRace] = useState<Race | null>(null);
   const [counterBudget, setCounterBudget] = useState(1000000);
+  const [counterSharePrice, setCounterSharePrice] = useState(2500);
   const [counterNote, setCounterNote] = useState('');
   const [busyId, setBusyId] = useState('');
 
@@ -193,6 +194,9 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
       regionalNote?: string;
     };
   }) => {
+    if (!payload.recipientUid || !/^[a-zA-Z0-9_-]{1,128}$/.test(payload.recipientUid)) {
+      return;
+    }
     const notifId = `ntf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     await setDoc(doc(db, 'notifications', notifId), {
       id: notifId,
@@ -284,9 +288,10 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     if (!counterRace) return;
     setBusyId(counterRace.id);
     const nextGross = Math.ceil(counterBudget * 1.05);
-    const nextUnit = Math.max(500, Math.round(nextGross / Math.max(1, counterRace.totalShares)));
+    const nextUnit = Math.max(500, Math.round(counterSharePrice || counterRace.unitSharePriceXAF || 2500));
+    const nextTotalShares = Math.max(10, Math.ceil(nextGross / nextUnit));
     const nextPctPerShare = Number(
-      (counterRace.revSharePct / Math.max(1, counterRace.totalShares)).toFixed(4)
+      (counterRace.revSharePct / nextTotalShares).toFixed(4)
     );
     try {
       await updateDoc(doc(db, 'races', counterRace.id), {
@@ -294,6 +299,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         grossTargetXAF: nextGross,
         unitSharePriceXAF: nextUnit,
         currentSharePriceXAF: nextUnit,
+        totalShares: nextTotalShares,
         pctPerShare: nextPctPerShare,
         status: 'awaiting_creator_acceptance',
         isPublic: true,
@@ -305,10 +311,10 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         recipientUid: counterRace.creatorUid,
         type: 'raise_offer',
         title: `Counter-Offer Ready: ${counterRace.title}`,
-        message: `Admin proposed revised terms: ${nextGross.toLocaleString()} XAF gross target (${counterRace.totalShares} shares @ ${nextUnit.toLocaleString()} XAF, ${nextPctPerShare}%/share). Accept to go live.`,
+        message: `Admin proposed revised terms: ${nextGross.toLocaleString()} XAF gross target (${nextTotalShares} shares @ ${nextUnit.toLocaleString()} XAF, ${nextPctPerShare}%/share). Accept to go live.`,
         raceId: counterRace.id,
         offerSummary: {
-          totalShares: counterRace.totalShares,
+          totalShares: nextTotalShares,
           unitSharePriceXAF: nextUnit,
           grossTargetXAF: nextGross,
           revSharePct: counterRace.revSharePct,
@@ -320,7 +326,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
 
       showToast(
         'Counter-Offer Sent',
-        `${counterRace.title} repriced to ${nextUnit.toLocaleString()} XAF/share and sent to creator for confirmation.`
+        `${counterRace.title} repriced to ${nextTotalShares} shares @ ${nextUnit.toLocaleString()} XAF/share and sent to creator.`
       );
       setCounterRace(null);
       setCounterNote('');
@@ -432,7 +438,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         status: 'closed',
         updatedAt: serverTimestamp(),
       });
-      showToast('Tranche 1 (50%) Released', `${Math.round(r.netBudgetXAF * 0.5).toLocaleString()} XAF unlocked.`);
+      showToast('Tranche 1 Released', `Initial production release unlocked for ${r.title}.`);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `races/${r.id}`);
     } finally {
@@ -941,6 +947,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                         onClick={() => {
                           setCounterRace(r);
                           setCounterBudget(r.netBudgetXAF);
+                          setCounterSharePrice(r.unitSharePriceXAF || 2500);
                         }}
                         className="px-3.5 py-2 rounded-xl bg-secondary text-on-secondary font-label-xs uppercase font-bold"
                       >
@@ -1100,7 +1107,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="font-headline-sm text-on-surface font-bold">
-                50/50 Escrow Tranche &amp; Dividend Waterfall
+                Milestone Escrow &amp; Dividend Waterfall
               </h2>
               <p className="font-body-sm text-on-surface-variant">
                 Release studio tranches upon proof and distribute streaming revenue shares to shareholders.
@@ -1130,9 +1137,9 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                 </span>
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-label-md font-bold">Tranche 1 (50% Mobilization)</div>
+                    <div className="font-label-md font-bold">Tranche 1 · Production Mobilization</div>
                     <div className="font-body-sm text-on-surface-variant">
-                      {Math.round(clearingRace.netBudgetXAF * 0.5).toLocaleString()} XAF
+                      CamPay Milestone Release
                     </div>
                   </div>
                   <button
@@ -1147,7 +1154,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
 
                 <div className="pt-3 border-t border-outline-variant/25 flex flex-col gap-2">
                   <div className="font-label-md font-bold">
-                    Tranche 2 (50% Upon Master Proof &amp; ISRC)
+                    Tranche 2 · Master Proof &amp; ISRC Verification
                   </div>
                   <input
                     type="text"
@@ -1541,19 +1548,42 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             <h3 className="font-headline-sm text-on-surface">
               Counter-Terms: {counterRace.title}
             </h3>
-            <div className="flex flex-col gap-1">
-              <label className="font-label-xs uppercase text-on-surface-variant">
-                Revised Net Budget (XAF)
-              </label>
-              <input
-                type="number"
-                min={50000}
-                step={50000}
-                required
-                value={counterBudget}
-                onChange={(e) => setCounterBudget(Number(e.target.value) || 50000)}
-                className="px-3.5 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 font-mono-num"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="font-label-xs uppercase text-on-surface-variant">
+                  Revised Net Budget (XAF)
+                </label>
+                <input
+                  type="number"
+                  min={50000}
+                  step={50000}
+                  required
+                  value={counterBudget}
+                  onChange={(e) => setCounterBudget(Number(e.target.value) || 50000)}
+                  className="px-3.5 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 font-mono-num"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="font-label-xs uppercase text-on-surface-variant">
+                  Fair Price / Share (XAF)
+                </label>
+                <input
+                  type="number"
+                  min={500}
+                  step={500}
+                  required
+                  value={counterSharePrice}
+                  onChange={(e) => setCounterSharePrice(Math.max(500, Number(e.target.value) || 500))}
+                  className="px-3.5 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 font-mono-num"
+                />
+              </div>
+            </div>
+            <div className="text-[12px] text-on-surface-variant tabular-nums">
+              Derived Share Split:{' '}
+              <strong className="text-on-surface">
+                {Math.max(10, Math.ceil((counterBudget * 1.05) / Math.max(500, counterSharePrice))).toLocaleString()} shares
+              </strong>{' '}
+              @ <strong className="text-secondary">{counterSharePrice.toLocaleString()} XAF/share</strong>
             </div>
             <div className="flex flex-col gap-1">
               <label className="font-label-xs uppercase text-on-surface-variant">

@@ -5,6 +5,14 @@ import { scrapeSpotifyArtists } from '../scrapers/apifyHub';
 
 export type ListenerRegion = 'cameroon_africa' | 'diaspora_mixed' | 'global_eu_us';
 
+export class UnderwriteValidationError extends Error {
+  statusCode = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnderwriteValidationError';
+  }
+}
+
 export interface UnderwriteInput {
   raceId: string;
   creatorName: string;
@@ -22,6 +30,8 @@ export interface UnderwriteInput {
   masterRightsOwned: boolean;
   distributor: string;
   listenerRegion?: ListenerRegion;
+  preferredSharePriceXAF?: number;
+  wikiGrade?: string;
 }
 
 export interface ValuationBreakdown {
@@ -89,21 +99,90 @@ const REGIONAL_STREAM_RATES: Record<
   },
 };
 
-function pickUnitSharePrice(grossTargetXAF: number): number {
-  if (grossTargetXAF <= 500_000) return 2_500;
-  if (grossTargetXAF <= 2_500_000) return 5_000;
-  if (grossTargetXAF <= 10_000_000) return 10_000;
-  return 25_000;
+export function pickCreatorFairSharePrice(
+  listenerRegion: ListenerRegion,
+  subscribers: number,
+  monthlyViews: number,
+  preferredSharePriceXAF?: number
+): { unitSharePriceXAF: number; maxSafeSharePriceXAF: number } {
+  const reachScore = Math.max(subscribers, Math.round(monthlyViews / 3));
+
+  let recommended = 2_500;
+  let maxSafe = 5_000;
+
+  if (listenerRegion === 'cameroon_africa') {
+    if (reachScore < 25_000) {
+      recommended = 1_000;
+      maxSafe = 5_000;
+    } else if (reachScore < 150_000) {
+      recommended = 2_500;
+      maxSafe = 5_000;
+    } else {
+      recommended = 5_000;
+      maxSafe = 10_000;
+    }
+  } else if (listenerRegion === 'diaspora_mixed') {
+    if (reachScore < 25_000) {
+      recommended = 2_500;
+      maxSafe = 10_000;
+    } else if (reachScore < 150_000) {
+      recommended = 5_000;
+      maxSafe = 10_000;
+    } else {
+      recommended = 10_000;
+      maxSafe = 10_000;
+    }
+  } else {
+    recommended = reachScore >= 50_000 ? 10_000 : 5_000;
+    maxSafe = 15_000;
+  }
+
+  const chosen =
+    typeof preferredSharePriceXAF === 'number' && Number.isFinite(preferredSharePriceXAF) && preferredSharePriceXAF >= 500
+      ? Math.min(maxSafe, Math.max(500, Math.round(preferredSharePriceXAF)))
+      : recommended;
+
+  return { unitSharePriceXAF: chosen, maxSafeSharePriceXAF: maxSafe };
+}
+
+function buildDeterministicUnderwriteScores(
+  input: UnderwriteInput,
+  regionRates: { label: string; spotifyRateXAF: number; audiomackRateXAF: number; youtubeRpmXAF: number },
+  effectiveSubscribers: number,
+  effectiveMonthlyViews: number,
+  deterministicRegionalCapXAF: number
+) {
+  const reachSignal = Math.log10(Math.max(1000, effectiveSubscribers + effectiveMonthlyViews));
+  const growth = Math.max(48, Math.min(92, Math.round(reachSignal * 14)));
+  const engagement = Math.max(45, Math.min(94, Math.round(48 + Math.min(10, input.engagementRate || 4) * 4.5)));
+  const monitorability = Math.max(60, Math.min(95, 58 + input.monitorableSources.length * 9));
+  const roiSpeed = input.roiDurationMonths <= 6 ? 86 : input.roiDurationMonths <= 12 ? 78 : input.roiDurationMonths <= 18 ? 70 : 64;
+  const consistency = input.entityType === 'agency' ? 82 : 74;
+  const projectedRevenueXAF = Math.max(350_000, Math.round(deterministicRegionalCapXAF * 1.15));
+
+  return {
+    growth,
+    engagement,
+    monitorability,
+    roiSpeed,
+    consistency,
+    projectedRevenueXAF,
+    regionalValuationNote: `${regionRates.label}: YT ${regionRates.youtubeRpmXAF} XAF/1k · Spotify ${regionRates.spotifyRateXAF} XAF/str · Audiomack ${regionRates.audiomackRateXAF} XAF/str.`,
+    reasoning: `Evaluated ${input.creatorName || 'Creator'}'s ${effectiveSubscribers.toLocaleString()} reach and ${effectiveMonthlyViews.toLocaleString()} monthly streams across ${input.monitorableSources.join(', ')} under ${regionRates.label} benchmarks.`,
+    counterTerms: '',
+  };
 }
 
 export async function underwriteRace(input: UnderwriteInput): Promise<UnderwriteResult> {
   if (!input.masterRightsOwned) {
-    throw new Error('Master rights ownership confirmation or written no-objection release is legally required.');
+    throw new UnderwriteValidationError(
+      'Master rights ownership confirmation or written no-objection release is legally required.'
+    );
   }
 
-  const invalidSources = input.monitorableSources.filter((s) => !ALLOWED_MONITORABLE_SOURCES.has(s));
-  if (invalidSources.length > 0 || input.monitorableSources.length === 0) {
-    throw new Error('Only 100% publicly monitorable digital revenue streams are allowed.');
+  const validSources = input.monitorableSources.filter((s) => ALLOWED_MONITORABLE_SOURCES.has(s));
+  if (validSources.length === 0) {
+    throw new UnderwriteValidationError('Select at least one publicly monitorable digital revenue stream.');
   }
 
   const listenerRegion: ListenerRegion =
@@ -112,8 +191,8 @@ export async function underwriteRace(input: UnderwriteInput): Promise<Underwrite
       : 'cameroon_africa';
   const regionRates = REGIONAL_STREAM_RATES[listenerRegion];
 
-  let effectiveSubscribers = Math.max(0, input.subscribers);
-  let effectiveMonthlyViews = Math.max(0, input.monthlyViews);
+  let effectiveSubscribers = Math.max(0, Number(input.subscribers) || 0);
+  let effectiveMonthlyViews = Math.max(0, Number(input.monthlyViews) || 0);
   let liveTelemetrySource = 'Creator Dossier';
 
   if (process.env.APIFY_API_TOKEN && input.creatorName.trim()) {
@@ -133,9 +212,27 @@ export async function underwriteRace(input: UnderwriteInput): Promise<Underwrite
     }
   }
 
-  const ai = getGeminiClient();
+  // Deterministic regional floor/sanity check from live monthly views/streams + region rates
+  const baselineMonthlyStreams = Math.max(10_000, effectiveMonthlyViews || effectiveSubscribers * 2);
+  const blendedPerStreamXAF = (regionRates.spotifyRateXAF + regionRates.audiomackRateXAF) / 2;
+  const deterministicRegionalCapXAF = Math.round(
+    baselineMonthlyStreams *
+      Math.max(6, Number(input.roiDurationMonths) || 12) *
+      (blendedPerStreamXAF * 0.45 + (regionRates.youtubeRpmXAF / 1000) * 0.55) *
+      1.35
+  );
 
-  const prompt = `You are Crippo's institutional AI Underwriter evaluating a Cameroonian/African digital creator project Race.
+  let parsed = buildDeterministicUnderwriteScores(
+    { ...input, monitorableSources: validSources },
+    regionRates,
+    effectiveSubscribers,
+    effectiveMonthlyViews,
+    deterministicRegionalCapXAF
+  );
+
+  try {
+    const ai = getGeminiClient();
+    const prompt = `You are Crippo's institutional AI Underwriter evaluating a Cameroonian/African digital creator project Raise.
 Evaluate the project strictly based on REGIONAL streaming economics so fans are never exploited by inflated targets:
 - Selected Listener Region: ${regionRates.label}
 - Regional Benchmarks: YouTube RPM ~ ${regionRates.youtubeRpmXAF} XAF per 1,000 views; Spotify blended payout ~ ${regionRates.spotifyRateXAF} XAF/stream; Audiomack ~ ${regionRates.audiomackRateXAF} XAF/stream (1 USD ≈ 610 XAF).
@@ -145,7 +242,7 @@ Project Input:
 - Creator: ${input.creatorName} (${input.entityType})
 - Title: ${input.title}
 - Category: ${input.category}
-- Monitorable Sources: ${input.monitorableSources.join(', ')}
+- Monitorable Sources: ${validSources.join(', ')}
 - Net Budget Needed: ${input.netBudgetXAF} XAF
 - Revenue Share Pledged to Investors: ${input.revSharePct}%
 - ROI Payout Duration: ${input.roiDurationMonths} months
@@ -164,52 +261,59 @@ Score each dimension from 0 to 100 conservatively:
 Estimate conservative projected gross digital + brand revenue in XAF over ${input.roiDurationMonths} months (projectedRevenueXAF), grounded strictly in the ${regionRates.label} streaming rates above.
 Provide concise underwriting reasoning, a short regionalValuationNote summarizing the fair regional Spotify/Audiomack/YouTube valuation math, and counterTerms if the budget appears inflated relative to conservative fan returns.`;
 
-  const response = await ai.models.generateContent({
-    model: CRIPPO_GEMINI_MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          growth: { type: Type.NUMBER },
-          engagement: { type: Type.NUMBER },
-          monitorability: { type: Type.NUMBER },
-          roiSpeed: { type: Type.NUMBER },
-          consistency: { type: Type.NUMBER },
-          projectedRevenueXAF: { type: Type.NUMBER },
-          regionalValuationNote: { type: Type.STRING },
-          reasoning: { type: Type.STRING },
-          counterTerms: { type: Type.STRING },
+    const response = await ai.models.generateContent({
+      model: CRIPPO_GEMINI_MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            growth: { type: Type.NUMBER },
+            engagement: { type: Type.NUMBER },
+            monitorability: { type: Type.NUMBER },
+            roiSpeed: { type: Type.NUMBER },
+            consistency: { type: Type.NUMBER },
+            projectedRevenueXAF: { type: Type.NUMBER },
+            regionalValuationNote: { type: Type.STRING },
+            reasoning: { type: Type.STRING },
+            counterTerms: { type: Type.STRING },
+          },
+          required: [
+            'growth',
+            'engagement',
+            'monitorability',
+            'roiSpeed',
+            'consistency',
+            'projectedRevenueXAF',
+            'regionalValuationNote',
+            'reasoning',
+            'counterTerms',
+          ],
         },
-        required: [
-          'growth',
-          'engagement',
-          'monitorability',
-          'roiSpeed',
-          'consistency',
-          'projectedRevenueXAF',
-          'regionalValuationNote',
-          'reasoning',
-          'counterTerms',
-        ],
       },
-    },
-  });
+    });
 
-  const parsed = JSON.parse((response.text || '{}').trim()) as {
-    growth: number;
-    engagement: number;
-    monitorability: number;
-    roiSpeed: number;
-    consistency: number;
-    projectedRevenueXAF: number;
-    regionalValuationNote: string;
-    reasoning: string;
-    counterTerms: string;
-  };
+    const rawText = (response.text || '{}').trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+    const aiParsed = JSON.parse(rawText) as Partial<typeof parsed>;
+    if (typeof aiParsed.growth === 'number') {
+      parsed = {
+        growth: Number(aiParsed.growth) || parsed.growth,
+        engagement: Number(aiParsed.engagement) || parsed.engagement,
+        monitorability: Number(aiParsed.monitorability) || parsed.monitorability,
+        roiSpeed: Number(aiParsed.roiSpeed) || parsed.roiSpeed,
+        consistency: Number(aiParsed.consistency) || parsed.consistency,
+        projectedRevenueXAF: Number(aiParsed.projectedRevenueXAF) || parsed.projectedRevenueXAF,
+        regionalValuationNote: String(aiParsed.regionalValuationNote || parsed.regionalValuationNote),
+        reasoning: String(aiParsed.reasoning || parsed.reasoning),
+        counterTerms: String(aiParsed.counterTerms || ''),
+      };
+    }
+  } catch {
+    // Graceful deterministic fallback keeps Raise underwriting 100% operational even if GEMINI_API_KEY is missing/rate-limited
+  }
 
-  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(Number(n) || 70)));
   const scoreBreakdown = {
     growth: clamp(parsed.growth),
     engagement: clamp(parsed.engagement),
@@ -226,16 +330,6 @@ Provide concise underwriting reasoning, a short regionalValuationNote summarizin
       0.15 * scoreBreakdown.consistency
   );
 
-  // Deterministic regional floor/sanity check from live monthly views/streams + region rates
-  const baselineMonthlyStreams = Math.max(10_000, effectiveMonthlyViews || effectiveSubscribers * 2);
-  const blendedPerStreamXAF = (regionRates.spotifyRateXAF + regionRates.audiomackRateXAF) / 2;
-  const deterministicRegionalCapXAF = Math.round(
-    baselineMonthlyStreams *
-      input.roiDurationMonths *
-      (blendedPerStreamXAF * 0.45 + (regionRates.youtubeRpmXAF / 1000) * 0.55) *
-      1.35
-  );
-
   const aiProjected = Math.max(100_000, Math.round(parsed.projectedRevenueXAF || 0));
   const projectedRevenueXAF = Math.max(
     100_000,
@@ -245,15 +339,21 @@ Provide concise underwriting reasoning, a short regionalValuationNote summarizin
   const investorPoolXAF = projectedRevenueXAF * (input.revSharePct / 100);
   const maxSupportableBudget = Math.floor(investorPoolXAF / 1.25);
 
-  const grossTargetXAF = Math.ceil(input.netBudgetXAF * 1.05);
-  const unitSharePriceXAF = pickUnitSharePrice(grossTargetXAF);
-  const totalShares = Math.ceil(grossTargetXAF / unitSharePriceXAF);
+  const netBudget = Math.max(10_000, Math.round(input.netBudgetXAF));
+  const grossTargetXAF = Math.ceil(netBudget * 1.05);
+  const { unitSharePriceXAF } = pickCreatorFairSharePrice(
+    listenerRegion,
+    effectiveSubscribers,
+    effectiveMonthlyViews,
+    input.preferredSharePriceXAF
+  );
+  const totalShares = Math.max(10, Math.ceil(grossTargetXAF / unitSharePriceXAF));
   const pctPerShare = Number((input.revSharePct / Math.max(1, totalShares)).toFixed(4));
 
   const clearingEmail = `race-${input.raceId}@clearing.crippo.cm`;
   const capTableHash = crypto
     .createHash('sha256')
-    .update(`${input.raceId}:${totalShares}:${input.revSharePct}:${input.netBudgetXAF}`)
+    .update(`${input.raceId}:${totalShares}:${input.revSharePct}:${netBudget}`)
     .digest('hex');
 
   const valuationBreakdown: ValuationBreakdown = {
@@ -271,12 +371,12 @@ Provide concise underwriting reasoning, a short regionalValuationNote summarizin
     `${regionRates.label}: YT ${regionRates.youtubeRpmXAF} XAF/1k · Spotify ${regionRates.spotifyRateXAF} XAF/str · Audiomack ${regionRates.audiomackRateXAF} XAF/str.`
   ).slice(0, 600);
 
-  const isInflated = input.netBudgetXAF > maxSupportableBudget;
+  const isInflated = netBudget > maxSupportableBudget;
 
   if (isInflated) {
     const recommendedRevShare = Math.min(
       85,
-      Math.ceil(((input.netBudgetXAF * 1.25) / projectedRevenueXAF) * 100)
+      Math.ceil(((netBudget * 1.25) / projectedRevenueXAF) * 100)
     );
     return {
       approved: false,

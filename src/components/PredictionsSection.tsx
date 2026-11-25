@@ -341,110 +341,157 @@ export function PredictionsSection({ onOpenApiSetup, onRequireAuth }: Prediction
               )}
             </div>
 
-            <div className="flex items-start gap-4">
-              <img
-                src={getCoverImage('Music', activePred.coverArtUrl)}
-                alt={activePred.entityName}
-                referrerPolicy="no-referrer"
-                className="w-14 h-14 rounded-xl object-cover shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <span className="font-label-xs uppercase text-secondary font-bold block">{activePred.entityName}</span>
-                <h3 className="font-headline-sm text-on-surface text-[18px] sm:text-[20px] leading-snug font-bold">
-                  {activePred.question}
-                </h3>
-                {activePred.description && (
-                  <p className="font-body-sm text-on-surface-variant mt-1">{activePred.description}</p>
-                )}
-                <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[12px] tabular-nums">
-                  <span className="text-on-tertiary-container font-semibold">
-                    {(isMultiChoice ? multiTotalVotes : totalYesNoVotes).toLocaleString()} Fan Votes
-                  </span>
-                  <span className="text-outline-variant">·</span>
-                  <span className="text-on-surface-variant">Ends {formatTimeRemaining(activePred.endsAt, lang)}</span>
-                  {userAlreadyVoted && (
-                    <>
-                      <span className="text-outline-variant">·</span>
-                      <span className="text-secondary font-bold">You voted ✓</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
             {isMultiChoice && activePred.options ? (
-              <div className="flex flex-col gap-2.5">
-                {activePred.options.map((opt) => {
-                  const pct = multiTotalVotes > 0 ? Math.round(((opt.votes || 0) / multiTotalVotes) * 100) : 0;
-                  const isLeader = opt.id === leaderId;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      disabled={votingBusy || userAlreadyVoted}
-                      onClick={() => handleCastVote(activePred, opt.id)}
-                      className={`relative w-full text-left px-4 py-3 rounded-xl border transition-colors overflow-hidden disabled:opacity-80 ${
-                        isLeader ? 'border-secondary' : 'border-outline-variant/40 hover:border-secondary'
-                      }`}
-                    >
-                      <div className="absolute inset-y-0 left-0 bg-secondary/12 transition-all duration-500" style={{ width: `${pct}%` }} />
-                      <div className="relative flex items-center justify-between gap-3 tabular-nums">
-                        <span className="font-label-md font-bold text-on-surface flex items-center gap-2">
-                          {opt.label}
-                          {isLeader && (
-                            <span className="px-1.5 py-0.5 rounded bg-secondary text-on-secondary text-[10px] uppercase">
-                              Leading
-                            </span>
-                          )}
-                        </span>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="font-mono-num text-[12px] text-on-surface-variant">
-                            {(opt.votes || 0).toLocaleString()} votes
-                          </span>
-                          <span className="font-ticker-val text-secondary font-bold w-11 text-right">{pct}%</span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
               <>
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tabular-nums">
-                    <span className="text-on-tertiary-container">
-                      {yesPct}% YES ({activePred.yesVotes} votes)
+                <div className="flex items-start gap-4">
+                  <img
+                    src={getCoverImage('Music', activePred.coverArtUrl)}
+                    alt={activePred.entityName}
+                    referrerPolicy="no-referrer"
+                    className="w-14 h-14 rounded-xl object-cover shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-label-xs uppercase text-secondary font-bold block">
+                      {activePred.entityName}
                     </span>
-                    <span className="text-error">
-                      {noPct}% NO ({activePred.noVotes} votes)
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-error overflow-hidden flex">
-                    <div className="h-full bg-on-tertiary-container transition-all duration-500" style={{ width: `${yesPct}%` }} />
+                    <h3 className="font-headline-sm text-on-surface text-[18px] sm:text-[20px] leading-snug font-bold">
+                      {activePred.question}
+                    </h3>
+                    {activePred.description && (
+                      <p className="font-body-sm text-on-surface-variant mt-1">{activePred.description}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[12px] tabular-nums">
+                      <span className="text-on-tertiary-container font-semibold">
+                        {multiTotalVotes.toLocaleString()} Fan Votes
+                      </span>
+                      <span className="text-outline-variant">·</span>
+                      <span className="text-on-surface-variant">
+                        Ends {formatTimeRemaining(activePred.endsAt, lang)}
+                      </span>
+                      {userAlreadyVoted && (
+                        <>
+                          <span className="text-outline-variant">·</span>
+                          <span className="text-secondary font-bold">You voted ✓</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2.5">
+                  {activePred.options.map((opt) => {
+                    const pct = multiTotalVotes > 0 ? Math.round(((opt.votes || 0) / multiTotalVotes) * 100) : 0;
+                    const isLeader = opt.id === leaderId;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={votingBusy || userAlreadyVoted}
+                        onClick={() => handleCastVote(activePred, opt.id)}
+                        className={`relative w-full text-left px-4 py-3 rounded-xl border transition-colors overflow-hidden disabled:opacity-80 ${
+                          isLeader ? 'border-secondary' : 'border-outline-variant/40 hover:border-secondary'
+                        }`}
+                      >
+                        <div
+                          className="absolute inset-y-0 left-0 bg-secondary/12 transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                        <div className="relative flex items-center justify-between gap-3 tabular-nums">
+                          <span className="font-label-md font-bold text-on-surface flex items-center gap-2">
+                            {opt.label}
+                            {isLeader && (
+                              <span className="px-1.5 py-0.5 rounded bg-secondary text-on-secondary text-[10px] uppercase">
+                                Leading
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="font-mono-num text-[12px] text-on-surface-variant">
+                              {(opt.votes || 0).toLocaleString()} votes
+                            </span>
+                            <span className="font-ticker-val text-secondary font-bold w-11 text-right">{pct}%</span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-4 flex-1 min-w-0">
+                  <img
+                    src={getCoverImage('Music', activePred.coverArtUrl)}
+                    alt={activePred.entityName}
+                    referrerPolicy="no-referrer"
+                    className="w-14 h-14 rounded-xl object-cover shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-label-xs uppercase text-secondary font-bold block">
+                      {activePred.entityName}
+                    </span>
+                    <h3 className="font-headline-sm text-on-surface text-[18px] sm:text-[20px] leading-snug font-bold">
+                      {activePred.question}
+                    </h3>
+                    {activePred.description && (
+                      <p className="font-body-sm text-on-surface-variant mt-1">{activePred.description}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[12px] tabular-nums">
+                      <span className="text-on-tertiary-container font-semibold">
+                        {totalYesNoVotes.toLocaleString()} Fan Votes
+                      </span>
+                      <span className="text-outline-variant">·</span>
+                      <span className="text-on-surface-variant">
+                        Ends {formatTimeRemaining(activePred.endsAt, lang)}
+                      </span>
+                      {userAlreadyVoted && (
+                        <>
+                          <span className="text-outline-variant">·</span>
+                          <span className="text-secondary font-bold">You voted ✓</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="mt-2.5 max-w-md flex flex-col gap-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold uppercase tabular-nums">
+                        <span className="text-on-tertiary-container">
+                          {yesPct}% YES ({activePred.yesVotes})
+                        </span>
+                        <span className="text-error">
+                          {noPct}% NO ({activePred.noVotes})
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-error overflow-hidden flex">
+                        <div
+                          className="h-full bg-on-tertiary-container transition-all duration-500"
+                          style={{ width: `${yesPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inline Row Yes / No Voting Buttons */}
+                <div className="shrink-0 flex flex-row items-center gap-2.5 md:self-center">
                   <button
                     type="button"
                     disabled={votingBusy || userAlreadyVoted}
                     onClick={() => handleCastVote(activePred, 'YES')}
-                    className="py-3 px-4 rounded-xl bg-on-tertiary-container text-white flex items-center justify-between font-headline-sm text-[15px] font-bold hover:opacity-95 active:scale-[0.99] transition-all disabled:opacity-75"
+                    className="py-2.5 px-4 min-w-[116px] rounded-xl bg-on-tertiary-container text-white flex items-center justify-between gap-2.5 font-headline-sm text-[14px] font-bold hover:opacity-95 active:scale-[0.99] transition-all disabled:opacity-75"
                   >
-                    <span>{userAlreadyVoted ? 'Voted' : 'Vote YES'}</span>
+                    <span>{userAlreadyVoted ? 'Voted' : 'YES'}</span>
                     <span className="font-mono-num tabular-nums">{yesPct}%</span>
                   </button>
                   <button
                     type="button"
                     disabled={votingBusy || userAlreadyVoted}
                     onClick={() => handleCastVote(activePred, 'NO')}
-                    className="py-3 px-4 rounded-xl bg-error text-white flex items-center justify-between font-headline-sm text-[15px] font-bold hover:opacity-95 active:scale-[0.99] transition-all disabled:opacity-75"
+                    className="py-2.5 px-4 min-w-[116px] rounded-xl bg-error text-white flex items-center justify-between gap-2.5 font-headline-sm text-[14px] font-bold hover:opacity-95 active:scale-[0.99] transition-all disabled:opacity-75"
                   >
-                    <span>{userAlreadyVoted ? 'Voted' : 'Vote NO'}</span>
+                    <span>{userAlreadyVoted ? 'Voted' : 'NO'}</span>
                     <span className="font-mono-num tabular-nums">{noPct}%</span>
                   </button>
                 </div>
-              </>
+              </div>
             )}
 
             {predictions.length > 1 && (

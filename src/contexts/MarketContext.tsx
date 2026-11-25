@@ -62,6 +62,7 @@ interface MarketContextValue {
   isVerifiedAgency: boolean;
   canLaunchRace: boolean;
   markNotificationRead: (notifId: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
   acceptRaiseOffer: (raceId: string, notifId?: string) => Promise<void>;
   acceptAffiliationRequest: (req: AffiliationRequest, notifId?: string) => Promise<void>;
   declineAffiliationRequest: (req: AffiliationRequest, notifId?: string) => Promise<void>;
@@ -89,6 +90,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState<ToastState | null>(null);
+  const seenNotifIdsRef = React.useRef<Set<string> | null>(null);
 
   const isAdmin = Boolean(
     emailVerified && user?.email?.toLowerCase() === ADMIN_EMAIL
@@ -208,6 +210,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user) {
+      seenNotifIdsRef.current = null;
       setMyTrades([]);
       setPublicOrders([]);
       setMyPayments([]);
@@ -218,6 +221,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       setOutgoingAffiliations([]);
       return;
     }
+
+    seenNotifIdsRef.current = null;
 
     const unsubMyTrades = onSnapshot(
       query(collection(db, 'trades'), where('buyerUid', '==', user.uid), limit(80)),
@@ -255,10 +260,34 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       (err) => logFirestoreError(err, OperationType.LIST, 'memos')
     );
 
+    const getNotifTime = (n: NotificationItem): number => {
+      const ts = n.createdAt as { toMillis?: () => number; seconds?: number } | undefined;
+      if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+      if (ts && typeof ts.seconds === 'number') return ts.seconds * 1000;
+      const fromId = Number(n.id?.split('_')[1]);
+      return Number.isFinite(fromId) ? fromId : 0;
+    };
+
     const unsubNotifs = onSnapshot(
       query(collection(db, 'notifications'), where('recipientUid', '==', user.uid), limit(40)),
       (snap) => {
-        const docs = snap.docs.map((d) => d.data() as NotificationItem);
+        const docs = snap.docs
+          .map((d) => d.data() as NotificationItem)
+          .sort((a, b) => getNotifTime(b) - getNotifTime(a));
+
+        if (seenNotifIdsRef.current !== null) {
+          const newlyArrived = docs.find(
+            (d) => !d.read && !seenNotifIdsRef.current?.has(d.id)
+          );
+          if (newlyArrived) {
+            setToast({
+              title: newlyArrived.title,
+              message: newlyArrived.message,
+              tone: newlyArrived.type === 'kyc_rejected' || newlyArrived.type === 'raise_rejected' ? 'info' : 'success',
+            });
+          }
+        }
+        seenNotifIdsRef.current = new Set(docs.map((d) => d.id));
         setNotifications(docs);
       },
       (err) => logFirestoreError(err, OperationType.LIST, 'notifications')
@@ -295,6 +324,18 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       handleFirestoreError(err, OperationType.UPDATE, `notifications/${notifId}`);
     }
   }, []);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+    try {
+      await Promise.all(
+        unread.map((n) => updateDoc(doc(db, 'notifications', n.id), { read: true }))
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'notifications/batch');
+    }
+  }, [notifications]);
 
   const acceptRaiseOffer = useCallback(
     async (raceId: string, notifId?: string) => {
@@ -399,6 +440,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         isVerifiedAgency,
         canLaunchRace,
         markNotificationRead,
+        markAllNotificationsRead,
         acceptRaiseOffer,
         acceptAffiliationRequest,
         declineAffiliationRequest,
