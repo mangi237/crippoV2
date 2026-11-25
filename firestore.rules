@@ -8,7 +8,7 @@ service cloud.firestore {
 
     function isSignedIn() {
       return request.auth != null;
-    }Preferences: Open User Settings (JSON)
+    }
 
     function isVerifiedUser() {
       return isSignedIn() && request.auth.token.email_verified == true;
@@ -92,8 +92,9 @@ service cloud.firestore {
         'entityType', 'isClaimed', 'kycStatus', 'isPublic', 'createdAt', 'updatedAt'
       ]) &&
       data.keys().hasOnly([
-        'id', 'stageName', 'legalFullName', 'bio', 'upcomingProjects', 'category', 'city', 'country', 'entityType',
-        'youtubeChannelId', 'tiktokHandle', 'facebookPage', 'spotifyArtistId',
+        'id', 'stageName', 'legalFullName', 'description', 'bio', 'upcomingProjects', 'category', 'genres',
+        'labelName', 'age', 'city', 'country', 'entityType',
+        'youtubeChannelId', 'tiktokHandle', 'instagramHandle', 'facebookPage', 'spotifyArtistId',
         'avatarUrl', 'subscribers', 'monthlyViews', 'engagementRate',
         'catalogValuationXAF', 'marketCapXAF', 'dividendsDisbursedXAF', 'isrcCount',
         'wikiGrade', 'payoutMomoNetwork',
@@ -110,10 +111,15 @@ service cloud.firestore {
       data.kycStatus in ['unverified', 'pending', 'verified', 'rejected'] &&
       data.isPublic is bool &&
       (!('legalFullName' in data) || (data.legalFullName is string && data.legalFullName.size() <= 120)) &&
-      (!('bio' in data) || (data.bio is string && data.bio.size() <= 600)) &&
+      (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+      (!('bio' in data) || (data.bio is string && data.bio.size() <= 4000)) &&
+      (!('labelName' in data) || (data.labelName is string && data.labelName.size() <= 120)) &&
+      (!('age' in data) || (data.age is number && data.age >= 0 && data.age <= 150)) &&
+      (!('genres' in data) || (data.genres is list && data.genres.size() <= 15)) &&
       (!('upcomingProjects' in data) || (data.upcomingProjects is list && data.upcomingProjects.size() <= 10)) &&
       (!('youtubeChannelId' in data) || (data.youtubeChannelId is string && data.youtubeChannelId.size() <= 120)) &&
       (!('tiktokHandle' in data) || (data.tiktokHandle is string && data.tiktokHandle.size() <= 80)) &&
+      (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 80)) &&
       (!('facebookPage' in data) || (data.facebookPage is string && data.facebookPage.size() <= 120)) &&
       (!('spotifyArtistId' in data) || (data.spotifyArtistId is string && data.spotifyArtistId.size() <= 120)) &&
       (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
@@ -255,7 +261,8 @@ service cloud.firestore {
       data.keys().hasOnly([
         'id', 'entityId', 'entityName', 'raceId', 'segment', 'sourcePlatform',
         'sourceName', 'sourceUrl', 'headline', 'summary', 'sentiment',
-        'priceImpactPct', 'engagementCount', 'publishedAt', 'isPublic', 'createdAt'
+        'priceImpactPct', 'engagementCount', 'publishedAt', 'isPublic', 'createdBy',
+        'aiMarketAssessment', 'aiPredictionImpact', 'aiConfidence', 'aiGeneratedAt', 'createdAt'
       ]) &&
       data.id == catalystId &&
       data.entityName is string && data.entityName.size() >= 1 && data.entityName.size() <= 100 &&
@@ -263,7 +270,7 @@ service cloud.firestore {
       data.sourcePlatform in ['TikTok', 'Facebook', 'YouTube', 'Web'] &&
       data.sourceName is string && data.sourceName.size() >= 1 && data.sourceName.size() <= 100 &&
       data.headline is string && data.headline.size() >= 2 && data.headline.size() <= 200 &&
-      data.summary is string && data.summary.size() >= 2 && data.summary.size() <= 600 &&
+      data.summary is string && data.summary.size() >= 2 && data.summary.size() <= 1200 &&
       data.sentiment in ['bullish', 'neutral', 'risk_alert'] &&
       data.priceImpactPct is number && data.priceImpactPct >= -50 && data.priceImpactPct <= 50 &&
       data.isPublic is bool &&
@@ -272,6 +279,11 @@ service cloud.firestore {
       (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 500)) &&
       (!('engagementCount' in data) || (data.engagementCount is number && data.engagementCount >= 0)) &&
       (!('publishedAt' in data) || (data.publishedAt is string && data.publishedAt.size() <= 40)) &&
+      (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 60)) &&
+      (!('aiMarketAssessment' in data) || (data.aiMarketAssessment is string && data.aiMarketAssessment.size() <= 1200)) &&
+      (!('aiPredictionImpact' in data) || (data.aiPredictionImpact is string && data.aiPredictionImpact.size() <= 800)) &&
+      (!('aiConfidence' in data) || (data.aiConfidence is number && data.aiConfidence >= 0 && data.aiConfidence <= 1)) &&
+      (!('aiGeneratedAt' in data) || (data.aiGeneratedAt is string && data.aiGeneratedAt.size() <= 40)) &&
       data.createdAt is timestamp;
     }
 
@@ -280,7 +292,7 @@ service cloud.firestore {
         'id', 'creatorUid', 'entityName', 'question', 'endsAt', 'status', 'isPublic', 'createdAt'
       ]) &&
       data.keys().hasOnly([
-        'id', 'creatorUid', 'entityName', 'topicCategory', 'pollType', 'question', 'coverArtUrl',
+        'id', 'creatorUid', 'entityName', 'topicCategory', 'pollType', 'question', 'description', 'coverArtUrl',
         'resolutionSource', 'aiProbability', 'reasoning', 'options', 'votedUids',
         'yesPriceXAF', 'noPriceXAF', 'yesVotes', 'noVotes', 'totalVolumeXAF',
         'endsAt', 'status', 'isPublic', 'createdAt'
@@ -289,6 +301,7 @@ service cloud.firestore {
       isValidId(data.creatorUid) &&
       data.entityName is string && data.entityName.size() >= 1 && data.entityName.size() <= 100 &&
       data.question is string && data.question.size() >= 5 && data.question.size() <= 240 &&
+      (!('description' in data) || (data.description is string && data.description.size() <= 800)) &&
       (!('pollType' in data) || data.pollType in ['yes_no', 'multi_choice']) &&
       (!('options' in data) || (data.options is list && data.options.size() <= 12)) &&
       (!('votedUids' in data) || (data.votedUids is list && data.votedUids.size() <= 1000)) &&

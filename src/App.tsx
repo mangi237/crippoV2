@@ -17,6 +17,7 @@ import { UserProfile } from './pages/UserProfile';
 import { LaunchRace } from './pages/LaunchRace';
 import { BrandsHub } from './pages/BrandsHub';
 import { AdminDesk } from './pages/AdminDesk';
+import { Predict } from './pages/Predict';
 
 function OnboardingGate({
   children,
@@ -50,6 +51,14 @@ function AppRouter() {
             element={
               <OnboardingGate>
                 <RacesCatalog onOpenApiSetup={() => setShowApiSetup(true)} />
+              </OnboardingGate>
+            }
+          />
+          <Route
+            path="/predict"
+            element={
+              <OnboardingGate>
+                <Predict onOpenApiSetup={() => setShowApiSetup(true)} />
               </OnboardingGate>
             }
           />

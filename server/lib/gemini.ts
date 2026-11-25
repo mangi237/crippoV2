@@ -8,7 +8,10 @@ export function getGeminiClient(): GoogleGenAI {
     throw new Error('GEMINI_API_KEY is not configured in server secrets.');
   }
   if (!cachedClient) {
-  cachedClient = new GoogleGenAI({ apiKey });
+    cachedClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
   }
   return cachedClient;
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useMarket } from '../contexts/MarketContext';
@@ -30,7 +30,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     declineAffiliationRequest,
   } = useMarket();
   const location = useLocation();
-  const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
@@ -57,6 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }> = [
     { path: '/', label: lang === 'fr' ? 'Marché & Actualités' : 'Market Feed', badge: `${openRacesCount}` },
     { path: '/races', label: lang === 'fr' ? 'Projets (Raises)' : 'Project Raises' },
+    { path: '/predict', label: lang === 'fr' ? 'Prédictions & Actus' : 'Predict & News' },
     { path: '/creators', label: lang === 'fr' ? 'Créateurs' : 'Creators' },
     ...(user
       ? [
@@ -540,6 +540,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex flex-wrap items-center gap-4 font-label-xs uppercase text-on-surface-variant">
               <Link to="/" className="hover:text-secondary">Market Feed</Link>
               <Link to="/races" className="hover:text-secondary">Raises</Link>
+              <Link to="/predict" className="hover:text-secondary">Predict &amp; News</Link>
               <Link to="/creators" className="hover:text-secondary">Creators</Link>
               {canAccessBrands && (
                 <Link to="/brands" className="hover:text-secondary">Brands Hub</Link>
@@ -572,19 +573,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="material-symbols-outlined text-[21px]">trending_up</span>
             <span className="font-label-xs mt-0.5">Raises</span>
           </Link>
-          <a
-            href="/#predictions"
-            onClick={(e) => {
-              if (location.pathname !== '/') {
-                e.preventDefault();
-                navigate('/');
-              }
-            }}
-            className="flex flex-col items-center justify-center min-w-[60px] h-12 transition-colors text-secondary font-semibold"
+          <Link
+            to="/predict"
+            className={`flex flex-col items-center justify-center min-w-[60px] h-12 transition-colors ${
+              location.pathname.startsWith('/predict')
+                ? 'text-secondary font-semibold'
+                : 'text-on-surface-variant'
+            }`}
           >
             <span className="material-symbols-outlined text-[21px]">electric_bolt</span>
             <span className="font-label-xs mt-0.5">Predict</span>
-          </a>
+          </Link>
           <Link
             to="/creators"
             className={`flex flex-col items-center justify-center min-w-[56px] h-12 transition-colors ${

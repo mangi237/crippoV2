@@ -49,7 +49,11 @@ export interface Entity {
   id: string;
   stageName: string;
   legalFullName?: string;
+  description?: string;
   bio?: string;
+  labelName?: string;
+  age?: number;
+  genres?: string[];
   upcomingProjects?: string[];
   category: string;
   city: string;
@@ -57,6 +61,7 @@ export interface Entity {
   entityType: 'solo' | 'agency';
   youtubeChannelId?: string;
   tiktokHandle?: string;
+  instagramHandle?: string;
   facebookPage?: string;
   spotifyArtistId?: string;
   avatarUrl?: string;
@@ -225,6 +230,11 @@ export interface Catalyst {
   priceImpactPct: number;
   engagementCount?: number;
   publishedAt?: string;
+  createdBy?: string;
+  aiMarketAssessment?: string;
+  aiPredictionImpact?: string;
+  aiConfidence?: number;
+  aiGeneratedAt?: string;
   isPublic: boolean;
   createdAt?: unknown;
 }
@@ -242,6 +252,7 @@ export interface PredictionMarket {
   topicCategory?: 'Music Milestones' | 'Viral View Milestones' | 'Culture & Awards' | 'Creator Releases';
   pollType?: 'yes_no' | 'multi_choice';
   question: string;
+  description?: string;
   coverArtUrl?: string;
   resolutionSource?: string;
   aiProbability?: number;

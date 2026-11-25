@@ -17,6 +17,7 @@ import { auditCreatorMemo } from './agents/memoAuditAgent';
 import { generateTrendProbabilities } from './agents/trendProbabilityAgent';
 import { runComplianceWatchdog } from './agents/complianceWatchdogAgent';
 import { runDividendClearing } from './agents/dividendClearingAgent';
+import { analyzeNewsMarketImpact } from './agents/newsImpactAgent';
 import { fetchRealCreatorsFromAPIs } from './scrapers/seedCreators';
 
 export function createApiApp(): express.Express {
@@ -163,6 +164,36 @@ export function createApiApp(): express.Express {
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Cultural Pulse pipeline failed.',
+      });
+    }
+  });
+
+  // AI News Tagging & Live Market Impact Agent (Protected)
+  app.post('/api/agents/news-impact', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const body = req.body || {};
+      if (!body.entityName || !body.headline) {
+        res.status(400).json({ error: 'entityName and headline are required.' });
+        return;
+      }
+      const result = await analyzeNewsMarketImpact({
+        entityName: String(body.entityName),
+        entityCategory: body.entityCategory ? String(body.entityCategory) : undefined,
+        entityCity: body.entityCity ? String(body.entityCity) : undefined,
+        entityBio: body.entityBio ? String(body.entityBio) : undefined,
+        entityGenres: Array.isArray(body.entityGenres) ? body.entityGenres.map(String) : undefined,
+        subscribers: typeof body.subscribers === 'number' ? body.subscribers : undefined,
+        headline: String(body.headline),
+        summary: String(body.summary || body.headline),
+        segment: String(body.segment || 'Trending'),
+        sourceName: body.sourceName ? String(body.sourceName) : undefined,
+        activeRaises: Array.isArray(body.activeRaises) ? body.activeRaises : undefined,
+        activePredictions: Array.isArray(body.activePredictions) ? body.activePredictions.map(String) : undefined,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'News impact analysis failed.',
       });
     }
   });

@@ -21,9 +21,9 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   const {
     entities,
     races,
+    catalysts,
     myMemos,
     isAdmin,
-    isVerifiedCreator,
     claimedEntity,
     isVerifiedAgency,
     showToast,
@@ -154,8 +154,28 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   }, [activeDossier?.id]);
 
   const entityRaces = useMemo(
-    () => (activeDossier ? races.filter((r) => r.entityId === activeDossier.id) : []),
+    () =>
+      activeDossier
+        ? races.filter(
+            (r) =>
+              r.entityId === activeDossier.id ||
+              r.creatorName.toLowerCase() === activeDossier.stageName.toLowerCase()
+          )
+        : [],
     [races, activeDossier]
+  );
+
+  const entityCatalysts = useMemo(
+    () =>
+      activeDossier
+        ? catalysts.filter(
+            (c) =>
+              c.entityId === activeDossier.id ||
+              c.entityName.toLowerCase().includes(activeDossier.stageName.toLowerCase()) ||
+              activeDossier.stageName.toLowerCase().includes(c.entityName.toLowerCase())
+          )
+        : [],
+    [catalysts, activeDossier]
   );
 
   const rosterArtists = useMemo(() => {
@@ -657,9 +677,606 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
       )}
 
       {viewTab === 'dossier' ? (
-        <div className="flex flex-col gap-8">
-          {/* Borderless Search Bar + Directory Grid */}
-          <div className="flex flex-col gap-4">
+        routeEntityId && activeDossier ? (
+          /* ================= LINKEDIN-STYLE FULL CREATOR PROFILE (/creator/:id) ================= */
+          <div className="flex flex-col gap-8">
+            <div className="flex items-center justify-between gap-3">
+              <Link
+                to="/creators"
+                className="inline-flex items-center gap-1.5 font-label-xs uppercase font-bold text-on-surface-variant hover:text-secondary transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                Back to Creators Directory
+              </Link>
+              <span className="font-mono-num text-[11px] font-bold uppercase text-on-surface-variant">
+                CRIPPO DOSSIER · CRIP-237-{activeDossier.id.slice(-4).toUpperCase()}
+              </span>
+            </div>
+
+            {/* LinkedIn-Style Hero Banner & Identity Cardless Header */}
+            <div className="flex flex-col">
+              <div className="h-32 sm:h-40 rounded-2xl bg-gradient-to-r from-[#160c26] via-[#24123c] to-[#0f172a] relative overflow-hidden">
+                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_right,_#8b5cf6_0%,_transparent_55%)]" />
+                <div className="absolute top-3 right-4">
+                  {!activeDossier.isClaimed ? (
+                    <span className="px-2.5 py-1 rounded bg-white/15 text-white font-label-xs uppercase font-bold backdrop-blur-xs">
+                      Unclaimed Profile
+                    </span>
+                  ) : activeDossier.kycStatus === 'verified' ? (
+                    <span className="px-2.5 py-1 rounded bg-on-tertiary-container text-white font-label-xs uppercase font-bold">
+                      {activeDossier.entityType === 'agency' ? 'Verified Label / Agency' : 'Verified Creator'}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded bg-secondary text-white font-label-xs uppercase font-bold">
+                      Verification Pending
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-2 sm:px-4 -mt-12 sm:-mt-14 flex flex-col sm:flex-row sm:items-end justify-between gap-4 relative z-10">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-4 min-w-0">
+                  <img
+                    src={getCoverImage(activeDossier.category, activeDossier.avatarUrl)}
+                    alt={activeDossier.stageName}
+                    referrerPolicy="no-referrer"
+                    className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-surface bg-surface shrink-0 shadow-md"
+                  />
+                  <div className="min-w-0 pb-1">
+                    <h2 className="font-headline-lg-mobile md:font-headline-lg text-on-surface font-bold truncate">
+                      {activeDossier.stageName}
+                    </h2>
+                    {activeDossier.description && (
+                      <p className="font-body-md text-on-surface mt-0.5">{activeDossier.description}</p>
+                    )}
+                    <p className="font-body-sm text-on-surface-variant mt-1">
+                      {activeDossier.genres && activeDossier.genres.length > 0
+                        ? activeDossier.genres.join(', ')
+                        : activeDossier.category}{' '}
+                      · {activeDossier.city}, {activeDossier.country}
+                      {activeDossier.labelName || activeDossier.agencyName
+                        ? ` · ${activeDossier.labelName || activeDossier.agencyName}`
+                        : ''}
+                      {activeDossier.age ? ` · Age ${activeDossier.age}` : ''}
+                    </p>
+                    <p className="text-[11px] font-mono-num text-on-surface-variant mt-0.5 tabular-nums">
+                      {(activeDossier.subscribers || 0).toLocaleString()} subscribers / followers
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0 pb-1">
+                  {!activeDossier.isClaimed ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!user) {
+                          setAuthPromptAction('claim this creator profile');
+                          return;
+                        }
+                        setClaimTarget(activeDossier);
+                        setViewTab('kyc');
+                      }}
+                      className="py-2.5 px-5 rounded-xl bg-primary text-on-primary font-label-md text-[12px] font-bold uppercase tracking-wider hover:opacity-95"
+                    >
+                      Claim Profile
+                    </button>
+                  ) : isOwnVerified ? (
+                    <>
+                      <VerifiedCreatorOnly
+                        targetEntityId={activeDossier.id}
+                        requireCanLaunch
+                        fallback={
+                          <span className="text-[12px] text-on-surface-variant">
+                            Managed by {activeDossier.agencyName}
+                          </span>
+                        }
+                      >
+                        <Link
+                          to="/launch-race"
+                          className="py-2.5 px-5 rounded-xl bg-secondary text-white font-label-md text-[12px] font-bold uppercase tracking-wider hover:opacity-95"
+                        >
+                          Launch a Project Raise
+                        </Link>
+                      </VerifiedCreatorOnly>
+                      <Link
+                        to="/brands"
+                        className="py-2.5 px-4 rounded-xl border border-outline-variant/50 text-on-surface font-label-md text-[12px] font-bold hover:border-secondary"
+                      >
+                        Brands Hub
+                      </Link>
+                    </>
+                  ) : isOwnPending ? (
+                    <span className="px-3 py-1.5 rounded-lg bg-secondary/15 text-secondary font-label-xs uppercase font-bold">
+                      KYC Under Review
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Social Links Row */}
+              {(activeDossier.youtubeChannelId ||
+                activeDossier.tiktokHandle ||
+                activeDossier.instagramHandle ||
+                activeDossier.spotifyArtistId ||
+                activeDossier.facebookPage) && (
+                <div className="flex flex-wrap items-center gap-4 px-2 sm:px-4 pt-4 text-[12px] font-label-md">
+                  {activeDossier.youtubeChannelId && (
+                    <a
+                      href={
+                        activeDossier.youtubeChannelId.startsWith('http')
+                          ? activeDossier.youtubeChannelId
+                          : `https://youtube.com/channel/${activeDossier.youtubeChannelId}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-secondary hover:underline"
+                    >
+                      YouTube ↗
+                    </a>
+                  )}
+                  {activeDossier.tiktokHandle && (
+                    <a
+                      href={
+                        activeDossier.tiktokHandle.startsWith('http')
+                          ? activeDossier.tiktokHandle
+                          : `https://tiktok.com/@${activeDossier.tiktokHandle.replace(/^@/, '')}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-secondary hover:underline"
+                    >
+                      TikTok @{activeDossier.tiktokHandle.replace(/^@/, '')} ↗
+                    </a>
+                  )}
+                  {activeDossier.instagramHandle && (
+                    <a
+                      href={
+                        activeDossier.instagramHandle.startsWith('http')
+                          ? activeDossier.instagramHandle
+                          : `https://instagram.com/${activeDossier.instagramHandle.replace(/^@/, '')}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-secondary hover:underline"
+                    >
+                      Instagram @{activeDossier.instagramHandle.replace(/^@/, '')} ↗
+                    </a>
+                  )}
+                  {activeDossier.spotifyArtistId && (
+                    <a
+                      href={`https://open.spotify.com/artist/${activeDossier.spotifyArtistId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-secondary hover:underline"
+                    >
+                      Spotify ↗
+                    </a>
+                  )}
+                  {activeDossier.facebookPage && (
+                    <a
+                      href={
+                        activeDossier.facebookPage.startsWith('http')
+                          ? activeDossier.facebookPage
+                          : `https://facebook.com/${activeDossier.facebookPage}`
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-secondary hover:underline"
+                    >
+                      Facebook ↗
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* LinkedIn-Style 2-Column Dossier Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start border-t border-outline-variant/25 pt-7">
+              {/* Left 8 Cols: Bio, Career Stats, Active Raises, Historical Performance & News */}
+              <div className="lg:col-span-8 flex flex-col gap-8">
+                {/* About / Biography */}
+                <section className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-headline-sm text-on-surface font-bold">About &amp; Career Biography</h3>
+                    {isViewingOwnClaimed && !editingBio && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingBio(true)}
+                        className="font-label-xs uppercase text-secondary font-bold hover:underline"
+                      >
+                        Edit Bio &amp; Projects
+                      </button>
+                    )}
+                  </div>
+
+                  {editingBio && isViewingOwnClaimed ? (
+                    <form onSubmit={handleSaveBioAndProjects} className="flex flex-col gap-3">
+                      <textarea
+                        rows={4}
+                        value={bioDraft}
+                        onChange={(e) => setBioDraft(e.target.value)}
+                        placeholder="Write your official biography, musical style, and career highlights..."
+                        className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
+                      />
+                      <textarea
+                        rows={3}
+                        value={projectsDraft}
+                        onChange={(e) => setProjectsDraft(e.target.value)}
+                        placeholder="Upcoming projects (one per line, e.g. Genesis EP — Q4 2026)"
+                        className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={savingBio}
+                          className="px-4 py-2 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold"
+                        >
+                          {savingBio ? 'Saving...' : 'Save Biography'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingBio(false)}
+                          className="px-4 py-2 rounded-lg border border-outline-variant/40 text-on-surface font-label-xs uppercase"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <p className="font-body-md text-on-surface leading-relaxed whitespace-pre-line">
+                        {activeDossier.bio ||
+                          `${activeDossier.stageName} is a ${activeDossier.category.toLowerCase()} creator based in ${activeDossier.city}, ${activeDossier.country}, onboarded to Crippo for fan-backed capital raises and cultural prediction tracking.`}
+                      </p>
+                      {activeDossier.upcomingProjects && activeDossier.upcomingProjects.length > 0 && (
+                        <div className="flex flex-col gap-1.5 pt-2">
+                          <span className="font-label-xs uppercase text-secondary font-bold">
+                            Upcoming Releases &amp; Milestones
+                          </span>
+                          <ul className="list-disc pl-5 text-[13px] text-on-surface space-y-1">
+                            {activeDossier.upcomingProjects.map((proj, i) => (
+                              <li key={i}>{proj}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </section>
+
+                {/* Career Stats & Valuation Metrics */}
+                <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
+                  <h3 className="font-headline-sm text-on-surface font-bold">Career Stats &amp; Market Valuation</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 tabular-nums">
+                    <div>
+                      <span className="font-label-xs uppercase text-on-surface-variant">Followers / Subs</span>
+                      <div className="font-headline-sm font-mono-num text-on-surface font-bold mt-1">
+                        {(activeDossier.subscribers || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-label-xs uppercase text-on-surface-variant">Monthly Plays</span>
+                      <div className="font-headline-sm font-mono-num text-on-surface font-bold mt-1">
+                        {(activeDossier.monthlyViews || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-label-xs uppercase text-on-surface-variant">Catalog Value</span>
+                      <div className="font-headline-sm font-mono-num text-secondary font-bold mt-1">
+                        {(activeDossier.catalogValuationXAF || 0).toLocaleString()} XAF
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-label-xs uppercase text-on-surface-variant">Dividends Paid</span>
+                      <div className="font-headline-sm font-mono-num text-on-tertiary-container font-bold mt-1">
+                        {(activeDossier.dividendsDisbursedXAF || 0).toLocaleString()} XAF
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Agency Roster List (when viewing an Agency/Label profile) */}
+                {activeDossier.entityType === 'agency' && (
+                  <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-3">
+                    <h3 className="font-headline-sm text-on-surface font-bold">
+                      Affiliated Artist Roster ({rosterArtists.length})
+                    </h3>
+                    {rosterArtists.length === 0 ? (
+                      <p className="font-body-sm text-on-surface-variant">
+                        No affiliated solo creators linked yet.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {rosterArtists.map((art) => (
+                          <Link
+                            key={art.id}
+                            to={`/creator/${art.id}`}
+                            className="py-2.5 border-b border-outline-variant/25 text-left hover:border-secondary"
+                          >
+                            <span className="font-label-md font-bold text-on-surface block">
+                              {art.stageName}
+                            </span>
+                            <span className="font-body-sm text-on-surface-variant">
+                              {art.category} · {art.city}
+                            </span>
+                            <span className="text-[11px] text-on-surface-variant block mt-0.5 tabular-nums">
+                              {(art.subscribers || 0).toLocaleString()} followers
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Active Raises & Historical Performance */}
+                <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-headline-sm text-on-surface font-bold">
+                      Active Raises &amp; Historical Performance ({entityRaces.length})
+                    </h3>
+                    <VerifiedCreatorOnly targetEntityId={activeDossier.id} requireCanLaunch>
+                      <Link
+                        to="/launch-race"
+                        className="px-3.5 py-1.5 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold"
+                      >
+                        + Launch Raise
+                      </Link>
+                    </VerifiedCreatorOnly>
+                  </div>
+
+                  {entityRaces.length === 0 ? (
+                    <p className="font-body-sm text-on-surface-variant py-2">
+                      No active or historical capital raises linked to {activeDossier.stageName} yet.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/20">
+                      {entityRaces.map((r) => {
+                        const fundedPct = Math.min(
+                          100,
+                          Math.round((r.sharesSold / Math.max(1, r.totalShares)) * 100)
+                        );
+                        const deltaPct =
+                          r.unitSharePriceXAF > 0
+                            ? Number(
+                                (
+                                  ((r.currentSharePriceXAF - r.unitSharePriceXAF) /
+                                    r.unitSharePriceXAF) *
+                                  100
+                                ).toFixed(1)
+                              )
+                            : 0;
+                        return (
+                          <Link
+                            key={r.id}
+                            to={`/race/${r.id}`}
+                            className="py-4 hover:text-secondary transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-label-md font-bold text-on-surface truncate">
+                                  {r.title}
+                                </h4>
+                                <span className="px-2 py-0.5 rounded bg-secondary/15 text-secondary font-label-xs uppercase font-bold">
+                                  {r.status.replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                              <span className="font-body-sm text-on-surface-variant block mt-0.5 tabular-nums">
+                                {r.category} · {fundedPct}% Funded ({r.sharesSold}/{r.totalShares} shares) · Rev Share{' '}
+                                {r.revSharePct}% ({r.roiDurationMonths}m) · ISRC: {r.isrcCode || 'Pending'}
+                              </span>
+                            </div>
+                            <div className="text-left sm:text-right shrink-0 tabular-nums">
+                              <span className="font-ticker-val text-on-surface block">
+                                {r.currentSharePriceXAF.toLocaleString()} XAF / share
+                              </span>
+                              <span
+                                className={`font-label-xs font-bold ${
+                                  deltaPct >= 0 ? 'text-on-tertiary-container' : 'text-error'
+                                }`}
+                              >
+                                {deltaPct >= 0 ? '+' : ''}
+                                {deltaPct}% since open
+                              </span>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                {/* News & AI Market Impact History */}
+                <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
+                  <h3 className="font-headline-sm text-on-surface font-bold">
+                    News Coverage &amp; Market Impact ({entityCatalysts.length})
+                  </h3>
+                  {entityCatalysts.length === 0 ? (
+                    <p className="font-body-sm text-on-surface-variant">
+                      No news articles tagged to {activeDossier.stageName} yet.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/20">
+                      {entityCatalysts.map((c) => (
+                        <article key={c.id} className="py-4 flex flex-col gap-2 dark:text-white">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-label-xs uppercase font-bold text-secondary dark:text-white">
+                              {c.segment} · {c.sourceName}
+                            </span>
+                            <span className="font-mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-surface-container text-on-surface dark:bg-zinc-800 dark:text-white tabular-nums">
+                              {c.priceImpactPct >= 0 ? `+${c.priceImpactPct}%` : `${c.priceImpactPct}%`}
+                            </span>
+                          </div>
+                          <h4 className="font-label-md font-bold text-on-surface dark:text-white">
+                            {c.headline}
+                          </h4>
+                          <p className="font-body-sm text-on-surface-variant dark:text-white leading-relaxed">
+                            {c.summary}
+                          </p>
+                          {c.aiMarketAssessment && (
+                            <p className="font-body-sm text-on-surface dark:text-white pt-1">
+                              <strong className="uppercase text-[10px] tracking-wider mr-1.5">
+                                AI Market Impact:
+                              </strong>
+                              {c.aiMarketAssessment}
+                            </p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* Agency Invite Box (Only visible to Verified Agencies viewing unaffiliated claimed Solo Creators) */}
+                {canAgencyInviteTarget && (
+                  <form
+                    onSubmit={handleSendAffiliationInvite}
+                    className="pt-6 border-t border-outline-variant/25 flex flex-col gap-2.5"
+                  >
+                    <span className="font-label-xs uppercase text-secondary font-bold">
+                      Record Label / Agency Roster Invite
+                    </span>
+                    <p className="font-body-sm text-on-surface-variant">
+                      Invite {activeDossier.stageName} to join {claimedEntity?.agencyName || claimedEntity?.stageName} so your label can manage and initiate Raises for them.
+                    </p>
+                    <input
+                      type="text"
+                      value={affMessage}
+                      onChange={(e) => setAffMessage(e.target.value)}
+                      placeholder="Optional message / management terms note..."
+                      className="px-3 py-2 rounded-lg border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
+                    />
+                    <button
+                      type="submit"
+                      disabled={sendingAff}
+                      className="self-start px-4 py-2 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold"
+                    >
+                      {sendingAff ? 'Sending...' : 'Send Label Affiliation Request'}
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              {/* Right 4 Cols: LinkedIn-Style Dossier Sidebar */}
+              <aside className="lg:col-span-4 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-6">
+                <div>
+                  <span className="font-label-xs uppercase text-secondary font-bold">
+                    Creator Profile Summary
+                  </span>
+                  <h3 className="font-headline-sm text-on-surface font-bold mt-0.5">
+                    {activeDossier.stageName}
+                  </h3>
+
+                  <div className="divide-y divide-outline-variant/25 font-body-sm mt-3">
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">Legal Name</span>
+                      <span className="font-semibold text-on-surface text-right">
+                        {activeDossier.legalFullName || 'Private / Pending'}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">Origin</span>
+                      <span className="font-semibold text-on-surface text-right">
+                        {activeDossier.city}, {activeDossier.country}
+                      </span>
+                    </div>
+                    {activeDossier.age ? (
+                      <div className="py-2.5 flex justify-between gap-2">
+                        <span className="text-on-surface-variant">Age</span>
+                        <span className="font-semibold text-on-surface">{activeDossier.age}</span>
+                      </div>
+                    ) : null}
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">Genres</span>
+                      <span className="font-semibold text-on-surface text-right">
+                        {activeDossier.genres?.length
+                          ? activeDossier.genres.join(', ')
+                          : activeDossier.category}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">Record Label / Agency</span>
+                      <span className="font-semibold text-on-surface text-right">
+                        {activeDossier.labelName || activeDossier.agencyName ? (
+                          activeDossier.affiliatedAgencyId ? (
+                            <Link
+                              to={`/creator/${activeDossier.affiliatedAgencyId}`}
+                              className="text-secondary hover:underline"
+                            >
+                              {activeDossier.labelName || activeDossier.agencyName}
+                            </Link>
+                          ) : (
+                            activeDossier.labelName || activeDossier.agencyName
+                          )
+                        ) : (
+                          'Independent'
+                        )}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">Engagement</span>
+                      <span className="font-mono-num text-on-surface">
+                        {activeDossier.engagementRate ? `${activeDossier.engagementRate}%` : 'Manually Indexed'}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">NIU / Tax ID</span>
+                      <span className="font-mono-num text-on-surface">
+                        {activeDossier.niuNumber || 'Unverified'}
+                      </span>
+                    </div>
+                    <div className="py-2.5 flex justify-between gap-2">
+                      <span className="text-on-surface-variant">Market Grade</span>
+                      <span className="font-bold text-secondary">
+                        {activeDossier.wikiGrade || 'B-Index'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Other Creators Quick Jump */}
+                <div className="border-t border-outline-variant/25 pt-5 flex flex-col gap-3">
+                  <span className="font-label-xs uppercase text-on-surface-variant font-bold">
+                    More Creators on Crippo
+                  </span>
+                  <div className="divide-y divide-outline-variant/20">
+                    {entities
+                      .filter((e) => e.id !== activeDossier.id)
+                      .slice(0, 5)
+                      .map((other) => (
+                        <Link
+                          key={other.id}
+                          to={`/creator/${other.id}`}
+                          className="py-2.5 flex items-center gap-3 hover:text-secondary transition-colors"
+                        >
+                          <img
+                            src={getCoverImage(other.category, other.avatarUrl)}
+                            alt={other.stageName}
+                            referrerPolicy="no-referrer"
+                            className="w-9 h-9 rounded-lg object-cover shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-label-md font-bold text-on-surface block truncate">
+                              {other.stageName}
+                            </span>
+                            <span className="text-[11px] text-on-surface-variant block truncate">
+                              {other.genres?.length ? other.genres.join(', ') : other.category} · {other.city}
+                            </span>
+                            <span className="text-[10px] font-mono-num text-on-surface-variant block tabular-nums">
+                              {(other.subscribers || 0).toLocaleString()} followers
+                            </span>
+                          </div>
+                        </Link>
+                      ))}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        ) : (
+          /* ================= CREATORS DIRECTORY CARDS (/creators) ================= */
+          <div className="flex flex-col gap-6">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 flex items-center gap-2.5 border-b border-outline-variant/40 py-2.5 focus-within:border-secondary transition-colors">
                 <span className="material-symbols-outlined text-outline text-[19px]">search</span>
@@ -694,485 +1311,100 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
             </div>
 
             {filteredDirectory.length === 0 ? (
-              <div className="py-8 text-center flex flex-col items-center gap-3">
+              <div className="py-10 text-center flex flex-col items-center gap-3">
                 <p className="font-body-md text-on-surface-variant">
-                  No creators match your search yet. Want to put an artist on Crippo?
+                  No creators match your search yet.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setViewTab('memo')}
-                  className="px-4 py-2 rounded-xl bg-secondary text-white font-label-md font-bold"
-                >
-                  Request a Memo (2,000 FCFA)
-                </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 max-h-72 overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
                 {filteredDirectory.map((ent) => {
-                  const selected = activeDossier?.id === ent.id;
+                  const genreAndLocation = `${
+                    ent.genres && ent.genres.length > 0 ? ent.genres.join(', ') : ent.category
+                  } · ${ent.city}, ${ent.country}`;
+
                   return (
-                    <button
+                    <article
                       key={ent.id}
-                      type="button"
-                      onClick={() => setSelectedEntityId(ent.id)}
-                      className={`py-2.5 px-2 border-b text-left flex items-center gap-3 transition-colors ${
-                        selected
-                          ? 'border-secondary text-secondary'
-                          : 'border-outline-variant/20 text-on-surface hover:border-secondary/60'
-                      }`}
+                      className="pt-4 border-t border-outline-variant/25 flex flex-col justify-between gap-3.5"
                     >
-                      <img
-                        src={getCoverImage(ent.category, ent.avatarUrl)}
-                        alt={ent.stageName}
-                        referrerPolicy="no-referrer"
-                        className="w-10 h-10 rounded-lg object-cover shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-label-md font-bold truncate">{ent.stageName}</span>
-                          <span className="text-[10px] font-label-xs uppercase text-secondary shrink-0">
-                            {ent.kycStatus === 'verified' ? 'Verified' : 'Audited'}
-                          </span>
+                      <Link
+                        to={`/creator/${ent.id}`}
+                        className="group flex items-start gap-3.5 min-w-0"
+                      >
+                        <img
+                          src={getCoverImage(ent.category, ent.avatarUrl)}
+                          alt={ent.stageName}
+                          referrerPolicy="no-referrer"
+                          className="w-14 h-14 rounded-xl object-cover shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h2 className="font-headline-sm text-[17px] font-bold text-on-surface group-hover:text-secondary transition-colors truncate">
+                              {ent.stageName}
+                            </h2>
+                            <span
+                              className={`text-[10px] font-label-xs uppercase shrink-0 font-bold ${
+                                ent.kycStatus === 'verified'
+                                  ? 'text-on-tertiary-container'
+                                  : 'text-on-surface-variant'
+                              }`}
+                            >
+                              {ent.kycStatus === 'verified' ? 'Verified' : 'Indexed'}
+                            </span>
+                          </div>
+
+                          <p className="text-[12px] text-on-surface-variant truncate mt-0.5">
+                            {genreAndLocation}
+                            {ent.labelName || ent.agencyName
+                              ? ` · ${ent.labelName || ent.agencyName}`
+                              : ''}
+                          </p>
+
+                          <p className="text-[11px] font-mono-num text-on-surface-variant mt-0.5 tabular-nums">
+                            {(ent.subscribers || 0).toLocaleString()} followers
+                          </p>
+
+                          {ent.description && (
+                            <p className="font-body-sm text-on-surface-variant line-clamp-2 mt-1.5">
+                              {ent.description}
+                            </p>
+                          )}
                         </div>
-                        <span className="text-[11px] block truncate text-on-surface-variant">
-                          {ent.category} · {ent.city}
-                          {ent.agencyName ? ` · ${ent.agencyName}` : ''}
-                        </span>
+                      </Link>
+
+                      <div className="flex items-center justify-between gap-3 pt-1">
+                        <Link
+                          to={`/creator/${ent.id}`}
+                          className="font-label-xs uppercase font-bold text-secondary hover:underline"
+                        >
+                          View Full Profile →
+                        </Link>
+
+                        {!ent.isClaimed && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!user) {
+                                setAuthPromptAction('claim a creator profile');
+                                return;
+                              }
+                              setClaimTarget(ent);
+                              setViewTab('kyc');
+                            }}
+                            className="px-3.5 py-1.5 rounded-lg bg-primary text-on-primary font-label-xs uppercase font-bold hover:opacity-95"
+                          >
+                            Claim Profile
+                          </button>
+                        )}
                       </div>
-                    </button>
+                    </article>
                   );
                 })}
               </div>
             )}
           </div>
-
-          {/* Wikipedia-Style Creator Profile (Borderless Seamless Flow) */}
-          {activeDossier && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start border-t border-outline-variant/25 pt-7">
-              <div className="lg:col-span-8 flex flex-col gap-7">
-                {/* Identity Header */}
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono-num text-[11px] font-bold uppercase text-on-surface-variant">
-                      CRIPPO WIKI · CRIP-237-{activeDossier.id.slice(-4).toUpperCase()}
-                    </span>
-
-                    {!activeDossier.isClaimed ? (
-                      <span className="px-3 py-1 rounded bg-secondary-fixed text-secondary font-label-xs uppercase font-bold">
-                        Unclaimed Profile
-                      </span>
-                    ) : activeDossier.kycStatus === 'verified' ? (
-                      <span className="px-3 py-1 rounded bg-on-tertiary-container/15 text-on-tertiary-container font-label-xs uppercase font-bold">
-                        {activeDossier.entityType === 'agency' ? 'Verified Record Label / Agency' : 'Verified Creator'}
-                      </span>
-                    ) : (
-                      <span className="px-3 py-1 rounded bg-secondary-fixed text-secondary font-label-xs uppercase font-bold">
-                        Verification Pending
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={getCoverImage(activeDossier.category, activeDossier.avatarUrl)}
-                      alt={activeDossier.stageName}
-                      referrerPolicy="no-referrer"
-                      className="w-16 h-16 rounded-xl object-cover shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <h2 className="font-headline-lg-mobile text-on-surface font-bold truncate">
-                        {activeDossier.stageName}
-                      </h2>
-                      <p className="font-body-sm text-on-surface-variant">
-                        {activeDossier.category} · {activeDossier.city}, {activeDossier.country}
-                        {activeDossier.agencyName ? ` · Label: ${activeDossier.agencyName}` : ''}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Bio & Upcoming Projects */}
-                  <div className="border-t border-outline-variant/25 pt-4 flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-label-xs uppercase text-secondary font-bold">
-                        Biography &amp; Upcoming Projects
-                      </h3>
-                      {isViewingOwnClaimed && !editingBio && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingBio(true)}
-                          className="font-label-xs uppercase text-secondary font-bold hover:underline"
-                        >
-                          Edit Bio &amp; Projects
-                        </button>
-                      )}
-                    </div>
-
-                    {editingBio && isViewingOwnClaimed ? (
-                      <form onSubmit={handleSaveBioAndProjects} className="flex flex-col gap-3">
-                        <textarea
-                          rows={3}
-                          value={bioDraft}
-                          onChange={(e) => setBioDraft(e.target.value)}
-                          placeholder="Write your official biography, musical style, and career highlights..."
-                          className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
-                        />
-                        <textarea
-                          rows={3}
-                          value={projectsDraft}
-                          onChange={(e) => setProjectsDraft(e.target.value)}
-                          placeholder="Upcoming projects (one per line, e.g. Genesis EP — Q4 2026)"
-                          className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
-                        />
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="submit"
-                            disabled={savingBio}
-                            className="px-4 py-2 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold"
-                          >
-                            {savingBio ? 'Saving...' : 'Save Wikipedia Bio'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingBio(false)}
-                            className="px-4 py-2 rounded-lg border border-outline-variant/40 text-on-surface font-label-xs uppercase"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <>
-                        <p className="font-body-md text-on-surface leading-relaxed">
-                          {activeDossier.bio ||
-                            `${activeDossier.stageName} is a ${activeDossier.category.toLowerCase()} creator based in ${activeDossier.city}, ${activeDossier.country}, tracked on Crippo for verified streaming velocity and cultural impact.`}
-                        </p>
-                        {activeDossier.upcomingProjects && activeDossier.upcomingProjects.length > 0 && (
-                          <div className="flex flex-col gap-1.5 pt-1">
-                            <span className="font-label-xs uppercase text-on-surface-variant">
-                              Upcoming Projects
-                            </span>
-                            <ul className="list-disc pl-5 text-[13px] text-on-surface space-y-1">
-                              {activeDossier.upcomingProjects.map((proj, i) => (
-                                <li key={i}>{proj}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  {/* Role-Based Action Row */}
-                  {!activeDossier.isClaimed ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!user) {
-                            setAuthPromptAction(`claim ${activeDossier.stageName}'s profile`);
-                            return;
-                          }
-                          setClaimTarget(activeDossier);
-                          setViewTab('kyc');
-                        }}
-                        className="py-3 px-4 rounded-xl bg-primary text-on-primary font-label-md text-[12px] font-bold"
-                      >
-                        Are you {activeDossier.stageName}? Claim This Profile
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!user) {
-                            setAuthPromptAction(`request a Memo for ${activeDossier.stageName}`);
-                            return;
-                          }
-                          setMemoStageName(activeDossier.stageName);
-                          setViewTab('memo');
-                        }}
-                        className="py-3 px-4 rounded-xl bg-secondary text-white font-label-md text-[12px] font-bold"
-                      >
-                        Request a Memo (2,000 FCFA)
-                      </button>
-                    </div>
-                  ) : isOwnVerified ? (
-                    <div className="flex flex-wrap items-center gap-3 pt-1">
-                      <VerifiedCreatorOnly
-                        targetEntityId={activeDossier.id}
-                        requireCanLaunch
-                        fallback={
-                          <div className="w-full py-2 border-l-2 border-secondary pl-3 text-[12px] text-on-surface-variant">
-                            Affiliated with <strong>{activeDossier.agencyName}</strong> — under label management, only your record label can initiate a Raise on your behalf.
-                          </div>
-                        }
-                      >
-                        <Link
-                          to="/launch-race"
-                          className="flex-1 py-3 px-5 rounded-xl bg-secondary text-white font-label-md text-[13px] font-bold uppercase tracking-wider text-center hover:opacity-95"
-                        >
-                          Launch a Project Raise
-                        </Link>
-                      </VerifiedCreatorOnly>
-                      {(isVerifiedCreator || isAdmin) && (
-                        <Link
-                          to="/brands"
-                          className="py-3 px-4 rounded-xl border border-outline-variant/50 text-on-surface font-label-md font-bold hover:border-secondary"
-                        >
-                          Brands Hub
-                        </Link>
-                      )}
-                    </div>
-                  ) : isOwnPending ? (
-                    <div className="py-2 border-l-2 border-secondary pl-3 text-[12px] text-on-surface-variant">
-                      Verification Under Review — Your Bio Code &amp; CNI/RCCM documents are being audited.
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!user) {
-                            setAuthPromptAction(`request an updated Memo for ${activeDossier.stageName}`);
-                            return;
-                          }
-                          setMemoStageName(activeDossier.stageName);
-                          setViewTab('memo');
-                        }}
-                        className="py-2.5 px-4 rounded-xl border border-outline-variant/50 text-on-surface font-label-md text-[12px] font-bold hover:border-secondary hover:text-secondary"
-                      >
-                        Request Updated Memo (2,000 FCFA)
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Agency Invite Box (Only visible to Verified Agencies viewing unaffiliated claimed Solo Creators) */}
-                  {canAgencyInviteTarget && (
-                    <form
-                      onSubmit={handleSendAffiliationInvite}
-                      className="mt-2 pt-4 border-t border-outline-variant/25 flex flex-col gap-2.5"
-                    >
-                      <span className="font-label-xs uppercase text-secondary font-bold">
-                        Record Label / Agency Roster Invite
-                      </span>
-                      <p className="font-body-sm text-on-surface-variant">
-                        Invite {activeDossier.stageName} to join {claimedEntity?.agencyName || claimedEntity?.stageName} so your label can manage and initiate Raises for them.
-                      </p>
-                      <input
-                        type="text"
-                        value={affMessage}
-                        onChange={(e) => setAffMessage(e.target.value)}
-                        placeholder="Optional message / management terms note..."
-                        className="px-3 py-2 rounded-lg border border-outline-variant/40 bg-transparent text-on-surface font-body-sm"
-                      />
-                      <button
-                        type="submit"
-                        disabled={sendingAff}
-                        className="self-start px-4 py-2 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold"
-                      >
-                        {sendingAff ? 'Sending...' : 'Send Label Affiliation Request'}
-                      </button>
-                    </form>
-                  )}
-                </div>
-
-                {/* Velocity Metrics (Borderless) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 border-t border-outline-variant/25 pt-5 tabular-nums">
-                  <div>
-                    <span className="font-label-xs uppercase text-on-surface-variant">
-                      Audience Reach
-                    </span>
-                    <div className="font-headline-lg-mobile font-mono-num text-on-surface mt-1">
-                      {(activeDossier.subscribers || 0).toLocaleString()}
-                    </div>
-                    <span className="font-body-sm text-on-tertiary-container">
-                      Verified Subscribers
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-label-xs uppercase text-on-surface-variant">
-                      Monthly Stream Velocity
-                    </span>
-                    <div className="font-headline-lg-mobile font-mono-num text-on-surface mt-1">
-                      {(activeDossier.monthlyViews || 0).toLocaleString()}
-                    </div>
-                    <span className="font-body-sm text-secondary">
-                      30-Day Monitorable Plays
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-label-xs uppercase text-on-surface-variant">
-                      Engagement Ratio
-                    </span>
-                    <div className="font-headline-lg-mobile font-mono-num text-on-surface mt-1">
-                      {activeDossier.engagementRate ? `${activeDossier.engagementRate}%` : 'Audited'}
-                    </div>
-                    <span className="font-body-sm text-on-surface-variant">
-                      {activeDossier.category} · {activeDossier.city}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Agency Roster List (when viewing an Agency/Label profile) */}
-                {activeDossier.entityType === 'agency' && (
-                  <div className="border-t border-outline-variant/25 pt-5 flex flex-col gap-3">
-                    <h3 className="font-headline-sm text-on-surface font-bold">
-                      Affiliated Artist Roster ({rosterArtists.length})
-                    </h3>
-                    {rosterArtists.length === 0 ? (
-                      <p className="font-body-sm text-on-surface-variant">
-                        No affiliated solo creators linked yet. Verified labels can send affiliation invites from any solo creator&apos;s page.
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {rosterArtists.map((art) => (
-                          <button
-                            key={art.id}
-                            type="button"
-                            onClick={() => setSelectedEntityId(art.id)}
-                            className="py-2.5 border-b border-outline-variant/25 text-left hover:border-secondary"
-                          >
-                            <span className="font-label-md font-bold text-on-surface block">
-                              {art.stageName}
-                            </span>
-                            <span className="font-body-sm text-on-surface-variant">
-                              {art.category} · {art.city}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Audited Master Races & Liens */}
-                <div className="border-t border-outline-variant/25 pt-5 flex flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-headline-sm text-on-surface font-bold">
-                      Project Raises &amp; Revenue Liens
-                    </h2>
-                    <VerifiedCreatorOnly targetEntityId={activeDossier.id} requireCanLaunch>
-                      <Link
-                        to="/launch-race"
-                        className="px-3.5 py-1.5 rounded-lg bg-secondary text-white font-label-xs uppercase font-bold"
-                      >
-                        + Launch Raise
-                      </Link>
-                    </VerifiedCreatorOnly>
-                  </div>
-
-                  {entityRaces.length === 0 ? (
-                    <p className="font-body-sm text-on-surface-variant py-2">
-                      No active or historical capital Raises tied to {activeDossier.stageName} yet.
-                    </p>
-                  ) : (
-                    <div className="divide-y divide-outline-variant/25">
-                      {entityRaces.map((r) => (
-                        <Link
-                          key={r.id}
-                          to={`/race/${r.id}`}
-                          className="py-3.5 hover:text-secondary transition-colors flex items-center justify-between gap-3"
-                        >
-                          <div>
-                            <h4 className="font-label-md font-bold text-on-surface">{r.title}</h4>
-                            <span className="font-body-sm text-on-surface-variant">
-                              {r.category} · Rev Share {r.revSharePct}% ({r.roiDurationMonths}m) · ISRC:{' '}
-                              {r.isrcCode || 'Pending'}
-                            </span>
-                          </div>
-                          <div className="text-right tabular-nums">
-                            <span className="font-ticker-val text-on-surface block">
-                              {r.currentSharePriceXAF.toLocaleString()} XAF
-                            </span>
-                            <span className="font-label-xs uppercase text-secondary font-bold">
-                              {r.status.replace(/_/g, ' ')}
-                            </span>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right 4 Cols: Wikipedia Infobox (Borderless Side Rail) */}
-              <aside className="lg:col-span-4 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-4">
-                <div>
-                  <span className="font-label-xs uppercase text-secondary font-bold">
-                    Creator Infobox
-                  </span>
-                  <h3 className="font-headline-sm text-on-surface font-bold mt-0.5">
-                    {activeDossier.stageName}
-                  </h3>
-                </div>
-
-                <div className="divide-y divide-outline-variant/25 font-body-sm">
-                  <div className="py-2.5 flex justify-between gap-2">
-                    <span className="text-on-surface-variant">Legal Name</span>
-                    <span className="font-semibold text-on-surface text-right">
-                      {activeDossier.legalFullName || 'Unclaimed / Private'}
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2">
-                    <span className="text-on-surface-variant">Origin</span>
-                    <span className="font-semibold text-on-surface text-right">
-                      {activeDossier.city}, {activeDossier.country}
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2">
-                    <span className="text-on-surface-variant">Classification</span>
-                    <span className="font-semibold uppercase text-on-surface">
-                      {activeDossier.entityType}
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2">
-                    <span className="text-on-surface-variant">Record Label / Agency</span>
-                    <span className="font-semibold text-on-surface text-right">
-                      {activeDossier.agencyName ? (
-                        activeDossier.affiliatedAgencyId ? (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedEntityId(activeDossier.affiliatedAgencyId!)}
-                            className="text-secondary hover:underline"
-                          >
-                            {activeDossier.agencyName}
-                          </button>
-                        ) : (
-                          activeDossier.agencyName
-                        )
-                      ) : (
-                        'Independent'
-                      )}
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2">
-                    <span className="text-on-surface-variant">NIU / Tax ID</span>
-                    <span className="font-mono-num text-on-surface">
-                      {activeDossier.niuNumber || 'Unverified'}
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2 tabular-nums">
-                    <span className="text-on-surface-variant">Catalog Valuation</span>
-                    <span className="font-mono-num font-bold text-on-surface">
-                      {(activeDossier.catalogValuationXAF || 0).toLocaleString()} XAF
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2 tabular-nums">
-                    <span className="text-on-surface-variant">Dividends Disbursed</span>
-                    <span className="font-mono-num font-bold text-on-tertiary-container">
-                      {(activeDossier.dividendsDisbursedXAF || 0).toLocaleString()} XAF
-                    </span>
-                  </div>
-                  <div className="py-2.5 flex justify-between gap-2">
-                    <span className="text-on-surface-variant">Market Grade</span>
-                    <span className="font-bold text-secondary">
-                      {activeDossier.wikiGrade || 'B-Index'}
-                    </span>
-                  </div>
-                </div>
-              </aside>
-            </div>
-          )}
-        </div>
+        )
       ) : viewTab === 'memo' ? (
         /* ================= CREATOR VERIFICATION / REQUEST A MEMO (STRICT POST-PAYMENT) ================= */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

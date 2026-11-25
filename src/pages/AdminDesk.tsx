@@ -337,9 +337,9 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   ) => {
     setBusyId(memo.id);
     try {
-      // Same collection the creator's dashboard reads. 'listed' is the status that unlocks "Launch a Raise".
-      await updateDoc(doc(db, 'memo_requests', memo.id), {
-        status: decision === 'approved' ? 'listed' : 'rejected',
+      // Same collection MarketContext reads ('memos'), matching firestore.rules enum ('approved' | 'rejected').
+      await updateDoc(doc(db, 'memos', memo.id), {
+        status: decision === 'approved' ? 'approved' : 'rejected',
         reviewedAt: serverTimestamp(),
       });
 
