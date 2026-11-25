@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../services/firebase';
+import { apiFetch } from '../services/api';
 import { useAuth, detectMomoProvider } from '../contexts/AuthContext';
 import { useMarket } from '../contexts/MarketContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -18,6 +19,7 @@ export function UserProfile() {
   const {
     races,
     myTrades,
+    myPayments,
     myDividends,
     notifications,
     affiliationRequests,
@@ -38,6 +40,86 @@ export function UserProfile() {
   const [togglingCreator, setTogglingCreator] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [walletModalTab, setWalletModalTab] = useState<'deposit' | 'withdraw' | null>(null);
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState<string | null>(null);
+
+  // Auto-detect return from Fapshi checkout or verify pending deposit
+  useEffect(() => {
+    if (!user || !profile) return;
+
+    const checkPendingDeposits = async () => {
+      // 1. Check URL parameters if redirected back with a payment reference/status
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlTransId = searchParams.get('transId') || searchParams.get('reference');
+
+      // 2. Check localStorage for an open pending deposit
+      let storedDeposit: {
+        paymentId: string;
+        reference: string;
+        amount: number;
+        methodLabel?: string;
+        uid: string;
+      } | null = null;
+      try {
+        const raw = localStorage.getItem('crippo_pending_deposit');
+        if (raw) storedDeposit = JSON.parse(raw);
+      } catch {
+        // ignore
+      }
+
+      const candidateRef = urlTransId || storedDeposit?.reference;
+      const candidatePaymentId = storedDeposit?.paymentId;
+
+      if (!candidateRef) return;
+
+      try {
+        const res = await apiFetch<{ status: string; amount?: number }>(
+          `/api/payments/fapshi/status/${encodeURIComponent(candidateRef)}`
+        );
+
+        if (res.status === 'SUCCESSFUL') {
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userRef);
+          const creditAmount = res.amount || storedDeposit?.amount || 0;
+
+          if (userSnap.exists() && creditAmount > 0) {
+            const cur = Number(userSnap.data()?.walletBalanceXAF || 0);
+            await updateDoc(userRef, {
+              walletBalanceXAF: cur + creditAmount,
+              updatedAt: serverTimestamp(),
+            });
+          }
+
+          if (candidatePaymentId) {
+            try {
+              await updateDoc(doc(db, 'payments', candidatePaymentId), {
+                status: 'SUCCESSFUL',
+                updatedAt: serverTimestamp(),
+              });
+            } catch {
+              // payment doc update optional
+            }
+          }
+
+          localStorage.removeItem('crippo_pending_deposit');
+          showToast(
+            'Deposit Credited!',
+            `${creditAmount.toLocaleString()} XAF has been added to your Crippo Wallet balance.`,
+            'success'
+          );
+
+          // Clean query params from URL without page reload
+          if (urlTransId) {
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, '', cleanUrl);
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-verify deposit check:', err);
+      }
+    };
+
+    void checkPendingDeposits();
+  }, [user, profile, showToast]);
 
   // Settings & Preferences State
   const [displayNameDraft, setDisplayNameDraft] = useState('');
@@ -477,6 +559,109 @@ export function UserProfile() {
                       </span>
                     </div>
                   </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Recent Payments & Fapshi Deposits Activity */}
+          <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline-sm text-on-surface font-bold">
+                Recent Transactions ({myPayments.length})
+              </h2>
+              <Link to="/trades" className="font-label-xs uppercase text-secondary font-bold hover:underline">
+                View Ledger →
+              </Link>
+            </div>
+
+            {myPayments.length === 0 ? (
+              <p className="font-body-sm text-on-surface-variant">
+                No recent payment transactions recorded.
+              </p>
+            ) : (
+              <div className="divide-y divide-outline-variant/25">
+                {myPayments.slice(0, 5).map((pay) => (
+                  <div key={pay.id} className="py-3 flex items-center justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-label-md font-bold text-on-surface truncate">
+                          {pay.type === 'WALLET_DEPOSIT'
+                            ? 'Wallet Deposit'
+                            : pay.type === 'SHARE_PURCHASE'
+                            ? 'Share Purchase'
+                            : pay.type.replace(/_/g, ' ')}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            pay.status === 'SUCCESSFUL'
+                              ? 'bg-secondary-fixed text-secondary'
+                              : pay.status === 'FAILED'
+                              ? 'bg-error/20 text-error'
+                              : 'bg-surface-container text-on-surface-variant'
+                          }`}
+                        >
+                          {pay.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant font-mono mt-0.5 truncate">
+                        Ref: {pay.reference} · {pay.provider}
+                      </p>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="font-mono-num font-bold text-on-surface block">
+                        +{pay.amountXAF.toLocaleString()} XAF
+                      </span>
+                      {pay.status === 'PENDING' && (
+                        <button
+                          type="button"
+                          disabled={verifyingPaymentId === pay.id}
+                          onClick={async () => {
+                            setVerifyingPaymentId(pay.id);
+                            try {
+                              const check = await apiFetch<{ status: string; amount?: number }>(
+                                `/api/payments/fapshi/status/${encodeURIComponent(pay.reference)}`
+                              );
+                              if (check.status === 'SUCCESSFUL') {
+                                const userRef = doc(db, 'users', user.uid);
+                                const userSnap = await getDoc(userRef);
+                                const cur = Number(userSnap.data()?.walletBalanceXAF || 0);
+                                await updateDoc(userRef, {
+                                  walletBalanceXAF: cur + pay.amountXAF,
+                                  updatedAt: serverTimestamp(),
+                                });
+                                await updateDoc(doc(db, 'payments', pay.id), {
+                                  status: 'SUCCESSFUL',
+                                  updatedAt: serverTimestamp(),
+                                });
+                                showToast(
+                                  'Deposit Verified!',
+                                  `${pay.amountXAF.toLocaleString()} XAF credited to your balance.`,
+                                  'success'
+                                );
+                              } else if (check.status === 'FAILED') {
+                                await updateDoc(doc(db, 'payments', pay.id), {
+                                  status: 'FAILED',
+                                  updatedAt: serverTimestamp(),
+                                });
+                                showToast('Payment Failed', 'Transaction was cancelled or declined.', 'error');
+                              } else {
+                                showToast('Payment Pending', 'Fapshi reports payment is still pending.', 'info');
+                              }
+                            } catch (err: unknown) {
+                              showToast('Check Failed', (err as Error).message, 'error');
+                            } finally {
+                              setVerifyingPaymentId(null);
+                            }
+                          }}
+                          className="text-[11px] text-secondary font-bold hover:underline"
+                        >
+                          {verifyingPaymentId === pay.id ? 'Checking...' : 'Check Status'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

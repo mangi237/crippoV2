@@ -50,6 +50,29 @@ export function WalletModal({
   const currentBalance = Math.max(0, Number(profile?.walletBalanceXAF || 0));
 
   useEffect(() => {
+    // Restore pending checkout session if user navigates back or opens modal again
+    if (!checkoutSession && user) {
+      try {
+        const raw = localStorage.getItem('crippo_pending_deposit');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.uid === user.uid && Date.now() - (parsed.timestamp || 0) < 3 * 3600 * 1000) {
+            setCheckoutSession({
+              link: parsed.link,
+              reference: parsed.reference,
+              paymentId: parsed.paymentId,
+              amount: parsed.amount,
+              methodLabel: parsed.methodLabel || 'Mobile Money',
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [user, checkoutSession]);
+
+  useEffect(() => {
     const detected = detectMomoProvider(phone);
     if (detected === 'MTN' || detected === 'ORANGE') {
       if (tab === 'withdraw') setWithdrawCarrier(detected);
@@ -89,8 +112,11 @@ export function WalletModal({
         status: 'SUCCESSFUL',
         updatedAt: serverTimestamp(),
       });
+      // Clear any pending checkout session saved in localStorage
+      localStorage.removeItem('crippo_pending_deposit');
     } catch (e) {
       console.error('Failed to write deposit update:', e);
+      throw e;
     }
 
     onSuccess(
@@ -158,13 +184,24 @@ export function WalletModal({
         updatedAt: serverTimestamp(),
       });
 
-      setCheckoutSession({
+      const pendingSession = {
         link: resp.link,
         reference: resp.reference,
         paymentId,
         amount: amountXAF,
         methodLabel,
-      });
+      };
+
+      setCheckoutSession(pendingSession);
+      try {
+        localStorage.setItem('crippo_pending_deposit', JSON.stringify({
+          ...pendingSession,
+          uid: user.uid,
+          timestamp: Date.now(),
+        }));
+      } catch {
+        // localStorage errors ignored
+      }
 
       setStatusMsg(
         lang === 'fr'
