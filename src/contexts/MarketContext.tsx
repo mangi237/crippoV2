@@ -13,6 +13,12 @@ import {
 import { db, handleFirestoreError, logFirestoreError, OperationType } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { apiFetch } from '../services/api';
+import { CRIPPO_DIRECTORY_300 } from '../data/crippoDirectory300';
+import {
+  isAgencyEntity,
+  isBrandEntity,
+  mergeDirectoryWithFirestore,
+} from '../utils/entityDirectory';
 import type {
   Race,
   Entity,
@@ -37,6 +43,7 @@ interface ToastState {
 interface MarketContextValue {
   races: Race[];
   entities: Entity[];
+  firestoreEntityIds: Set<string>;
   catalysts: Catalyst[];
   predictions: PredictionMarket[];
   campaigns: Campaign[];
@@ -75,7 +82,7 @@ const ADMIN_EMAIL = 'mangilerinelasliejr@gmail.com';
 export function MarketProvider({ children }: { children: React.ReactNode }) {
   const { user, emailVerified, profile } = useAuth();
   const [races, setRaces] = useState<Race[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([]);
+  const [liveEntities, setLiveEntities] = useState<Entity[]>([]);
   const [catalysts, setCatalysts] = useState<Catalyst[]>([]);
   const [predictions, setPredictions] = useState<PredictionMarket[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -94,6 +101,16 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = Boolean(
     emailVerified && user?.email?.toLowerCase() === ADMIN_EMAIL
+  );
+
+  const firestoreEntityIds = React.useMemo(
+    () => new Set(liveEntities.map((e) => e.id)),
+    [liveEntities]
+  );
+
+  const entities = React.useMemo(
+    () => mergeDirectoryWithFirestore(CRIPPO_DIRECTORY_300, liveEntities),
+    [liveEntities]
   );
 
   const claimedEntity = React.useMemo(() => {
@@ -116,17 +133,22 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   );
 
   const isVerifiedAgency = Boolean(
-    isVerifiedCreator && claimedEntity?.entityType === 'agency'
+    isVerifiedCreator && claimedEntity && isAgencyEntity(claimedEntity)
   );
 
   const isLabelAffiliatedCreator = Boolean(
     isClaimedCreator &&
-      claimedEntity?.entityType !== 'agency' &&
-      Boolean(claimedEntity?.affiliatedAgencyId)
+      claimedEntity &&
+      !isAgencyEntity(claimedEntity) &&
+      Boolean(claimedEntity.affiliatedAgencyId)
   );
 
   const canLaunchRace = Boolean(
-    isAdmin || (isVerifiedCreator && !isLabelAffiliatedCreator)
+    isAdmin ||
+      (isVerifiedCreator &&
+        claimedEntity &&
+        !isBrandEntity(claimedEntity) &&
+        !isLabelAffiliatedCreator)
   );
 
   const affiliationRequests = React.useMemo(() => {
@@ -176,8 +198,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     );
 
     const unsubEntities = onSnapshot(
-      query(collection(db, 'entities'), where('isPublic', '==', true), limit(60)),
-      (snap) => setEntities(snap.docs.map((d) => d.data() as Entity)),
+      query(collection(db, 'entities'), where('isPublic', '==', true), limit(400)),
+      (snap) => setLiveEntities(snap.docs.map((d) => d.data() as Entity)),
       (err) => logFirestoreError(err, OperationType.LIST, 'entities')
     );
 
@@ -415,6 +437,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       value={{
         races,
         entities,
+        firestoreEntityIds,
         catalysts,
         predictions,
         campaigns,

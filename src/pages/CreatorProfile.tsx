@@ -10,6 +10,13 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { AuthPromptModal } from '../components/AuthPromptModal';
 import { VerifiedCreatorOnly } from '../components/VerifiedCreatorOnly';
 import { getCoverImage } from '../utils/media';
+import {
+  isAgencyEntity,
+  isBrandEntity,
+  isCreatorEntity,
+  isRisingEntity,
+  toFirestoreCompliantEntity,
+} from '../utils/entityDirectory';
 import type { Entity } from '../types/crippo';
 
 interface CreatorProfileProps {
@@ -20,6 +27,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   const { user, profile, privateInfo } = useAuth();
   const {
     entities,
+    firestoreEntityIds,
     races,
     catalysts,
     myMemos,
@@ -43,6 +51,9 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   const [viewTab, setViewTab] = useState<'dossier' | 'kyc' | 'memo'>(initialTab);
   const [selectedEntityId, setSelectedEntityId] = useState<string>(routeEntityId || '');
   const [directorySearch, setDirectorySearch] = useState('');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'creators' | 'rising' | 'agencies' | 'brands'>('all');
+  const [genderFilter, setGenderFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
+  const [visibleCount, setVisibleCount] = useState(36);
   const [authPromptAction, setAuthPromptAction] = useState<string | null>(null);
 
   useEffect(() => {
@@ -123,18 +134,43 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
     }
   }, [privateInfo?.phone, memoPhone]);
 
+  const scopeCounts = useMemo(
+    () => ({
+      all: entities.length,
+      creators: entities.filter((e) => isCreatorEntity(e) && !isRisingEntity(e)).length,
+      rising: entities.filter((e) => isRisingEntity(e)).length,
+      agencies: entities.filter((e) => isAgencyEntity(e)).length,
+      brands: entities.filter((e) => isBrandEntity(e)).length,
+    }),
+    [entities]
+  );
+
   const filteredDirectory = useMemo(() => {
     const q = directorySearch.trim().toLowerCase();
     return entities.filter((e) => {
+      if (scopeFilter === 'creators' && (!isCreatorEntity(e) || isRisingEntity(e))) return false;
+      if (scopeFilter === 'rising' && !isRisingEntity(e)) return false;
+      if (scopeFilter === 'agencies' && !isAgencyEntity(e)) return false;
+      if (scopeFilter === 'brands' && !isBrandEntity(e)) return false;
+      if (genderFilter !== 'ALL' && e.gender !== genderFilter) return false;
       if (!q) return true;
       return (
         e.stageName.toLowerCase().includes(q) ||
         e.category.toLowerCase().includes(q) ||
         e.city.toLowerCase().includes(q) ||
-        (e.agencyName || '').toLowerCase().includes(q)
+        e.country.toLowerCase().includes(q) ||
+        (e.agencyName || '').toLowerCase().includes(q) ||
+        (e.labelName || '').toLowerCase().includes(q) ||
+        (e.primaryRole || '').toLowerCase().includes(q) ||
+        (e.genres || []).some((g) => g.toLowerCase().includes(q)) ||
+        (e.subGenres || []).some((g) => g.toLowerCase().includes(q))
       );
     });
-  }, [entities, directorySearch]);
+  }, [entities, directorySearch, scopeFilter, genderFilter]);
+
+  useEffect(() => {
+    setVisibleCount(36);
+  }, [directorySearch, scopeFilter, genderFilter]);
 
   const activeDossier = useMemo(
     () =>
@@ -179,9 +215,11 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   );
 
   const rosterArtists = useMemo(() => {
-    if (!activeDossier || activeDossier.entityType !== 'agency') return [];
+    if (!activeDossier || !isAgencyEntity(activeDossier)) return [];
+    const rosterSet = new Set(activeDossier.rosterCreatorIds || []);
     return entities.filter(
       (e) =>
+        rosterSet.has(e.id) ||
         e.affiliatedAgencyId === activeDossier.id ||
         (activeDossier.claimedByUid && e.affiliatedAgencyUid === activeDossier.claimedByUid)
     );
@@ -220,7 +258,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
     isVerifiedAgency &&
       claimedEntity &&
       activeDossier &&
-      activeDossier.entityType === 'solo' &&
+      isCreatorEntity(activeDossier) &&
       activeDossier.isClaimed &&
       activeDossier.claimedByUid &&
       activeDossier.claimedByUid !== user?.uid &&
@@ -325,11 +363,22 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
         .map((s) => s.trim())
         .filter(Boolean)
         .slice(0, 10);
-      await updateDoc(doc(db, 'entities', activeDossier.id), {
-        bio: bioDraft.trim().slice(0, 600),
-        upcomingProjects: upcoming,
-        updatedAt: serverTimestamp(),
-      });
+      if (firestoreEntityIds.has(activeDossier.id)) {
+        await updateDoc(doc(db, 'entities', activeDossier.id), {
+          bio: bioDraft.trim().slice(0, 600),
+          upcomingProjects: upcoming,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(
+          doc(db, 'entities', activeDossier.id),
+          toFirestoreCompliantEntity(activeDossier, {
+            bio: bioDraft.trim().slice(0, 600),
+            upcomingProjects: upcoming,
+          }),
+          { merge: true }
+        );
+      }
       setEditingBio(false);
       showToast('Profile Updated', 'Bio and upcoming projects saved.');
     } catch (err: unknown) {
@@ -419,28 +468,60 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
       });
 
       const nextKycStatus = 'pending';
+      const targetAlreadyInFirestore = firestoreEntityIds.has(claimTarget.id);
+      const effectiveEntityType: 'solo' | 'agency' =
+        affiliation === 'agency' || isAgencyEntity(claimTarget) ? 'agency' : 'solo';
 
       if (!claimTarget.isClaimed) {
-        await updateDoc(doc(db, 'entities', claimTarget.id), {
+        const claimOverrides = {
           isClaimed: true,
           claimedByUid: user.uid,
           bioVerificationCode: handshakeCode,
           kycStatus: nextKycStatus,
-          entityType: affiliation,
-          ...(affiliation === 'agency' ? { agencyName: agencyName.trim(), rccmNumber: rccmNumber.trim() } : {}),
-          niuNumber: niuNumber.trim(),
-          legalFullName: legalFullName.trim(),
+          entityType: effectiveEntityType,
+          ...(effectiveEntityType === 'agency'
+            ? {
+                agencyName: (agencyName.trim() || claimTarget.stageName).slice(0, 100),
+                rccmNumber: rccmNumber.trim().slice(0, 50),
+              }
+            : {}),
+          niuNumber: niuNumber.trim().slice(0, 50),
+          legalFullName: legalFullName.trim().slice(0, 120),
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        if (targetAlreadyInFirestore) {
+          await updateDoc(doc(db, 'entities', claimTarget.id), claimOverrides);
+        } else {
+          await setDoc(
+            doc(db, 'entities', claimTarget.id),
+            toFirestoreCompliantEntity(claimTarget, claimOverrides, true),
+            { merge: true }
+          );
+        }
       } else if (claimTarget.claimedByUid === user.uid) {
-        await updateDoc(doc(db, 'entities', claimTarget.id), {
-          entityType: affiliation,
-          ...(affiliation === 'agency' ? { agencyName: agencyName.trim(), rccmNumber: rccmNumber.trim() } : {}),
-          niuNumber: niuNumber.trim(),
+        const updateOverrides = {
+          entityType: effectiveEntityType,
+          ...(effectiveEntityType === 'agency'
+            ? {
+                agencyName: (agencyName.trim() || claimTarget.stageName).slice(0, 100),
+                rccmNumber: rccmNumber.trim().slice(0, 50),
+              }
+            : {}),
+          niuNumber: niuNumber.trim().slice(0, 50),
           kycStatus: nextKycStatus,
-          legalFullName: legalFullName.trim(),
+          legalFullName: legalFullName.trim().slice(0, 120),
           updatedAt: serverTimestamp(),
-        });
+        };
+        if (targetAlreadyInFirestore) {
+          await updateDoc(doc(db, 'entities', claimTarget.id), updateOverrides);
+        } else {
+          await setDoc(
+            doc(db, 'entities', claimTarget.id),
+            toFirestoreCompliantEntity(claimTarget, updateOverrides, true),
+            { merge: true }
+          );
+        }
       }
 
       await updateDoc(doc(db, 'users', user.uid), {
@@ -700,11 +781,21 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                 <div className="absolute top-3 right-4">
                   {!activeDossier.isClaimed ? (
                     <span className="px-2.5 py-1 rounded bg-white/15 text-white font-label-xs uppercase font-bold backdrop-blur-xs">
-                      Unclaimed Profile
+                      {isBrandEntity(activeDossier)
+                        ? 'Unclaimed Brand Sponsor'
+                        : isAgencyEntity(activeDossier)
+                        ? 'Unclaimed Label / Agency'
+                        : isRisingEntity(activeDossier)
+                        ? 'Rising Hope · Unclaimed'
+                        : 'Unclaimed Profile'}
                     </span>
                   ) : activeDossier.kycStatus === 'verified' ? (
                     <span className="px-2.5 py-1 rounded bg-on-tertiary-container text-white font-label-xs uppercase font-bold">
-                      {activeDossier.entityType === 'agency' ? 'Verified Label / Agency' : 'Verified Creator'}
+                      {isBrandEntity(activeDossier)
+                        ? 'Verified Brand Sponsor'
+                        : isAgencyEntity(activeDossier)
+                        ? 'Verified Label / Agency'
+                        : 'Verified Creator'}
                     </span>
                   ) : (
                     <span className="px-2.5 py-1 rounded bg-secondary text-white font-label-xs uppercase font-bold">
@@ -794,12 +885,15 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                 </div>
               </div>
 
-              {/* Social Links Row */}
+              {/* Social & Source Links Row */}
               {(activeDossier.youtubeChannelId ||
                 activeDossier.tiktokHandle ||
                 activeDossier.instagramHandle ||
                 activeDossier.spotifyArtistId ||
-                activeDossier.facebookPage) && (
+                activeDossier.spotifyUrl ||
+                activeDossier.facebookPage ||
+                activeDossier.website ||
+                activeDossier.sourceUrl) && (
                 <div className="flex flex-wrap items-center gap-4 px-2 sm:px-4 pt-4 text-[12px] font-label-md">
                   {activeDossier.youtubeChannelId && (
                     <a
@@ -843,14 +937,17 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                       Instagram @{activeDossier.instagramHandle.replace(/^@/, '')} ↗
                     </a>
                   )}
-                  {activeDossier.spotifyArtistId && (
+                  {(activeDossier.spotifyUrl || activeDossier.spotifyArtistId) && (
                     <a
-                      href={`https://open.spotify.com/artist/${activeDossier.spotifyArtistId}`}
+                      href={
+                        activeDossier.spotifyUrl ||
+                        `https://open.spotify.com/artist/${activeDossier.spotifyArtistId}`
+                      }
                       target="_blank"
                       rel="noreferrer"
                       className="text-secondary hover:underline"
                     >
-                      Spotify ↗
+                      Spotify{activeDossier.spotifyMonthlyListeners ? ` (${activeDossier.spotifyMonthlyListeners.toLocaleString()}/mo)` : ''} ↗
                     </a>
                   )}
                   {activeDossier.facebookPage && (
@@ -865,6 +962,26 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                       className="text-secondary hover:underline"
                     >
                       Facebook ↗
+                    </a>
+                  )}
+                  {activeDossier.website && (
+                    <a
+                      href={activeDossier.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-secondary hover:underline"
+                    >
+                      Official Website ↗
+                    </a>
+                  )}
+                  {activeDossier.sourceUrl && activeDossier.sourceUrl !== activeDossier.website && (
+                    <a
+                      href={activeDossier.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-on-surface-variant hover:text-secondary hover:underline"
+                    >
+                      Verified Reference ↗
                     </a>
                   )}
                 </div>
@@ -976,12 +1093,131 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                   </div>
                 </section>
 
-                {/* Agency Roster List (when viewing an Agency/Label profile) */}
-                {activeDossier.entityType === 'agency' && (
-                  <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-3">
+                {/* Multi-Role Matrix, Revenue Split & Role-Specific Affiliations (Schema A) */}
+                {isCreatorEntity(activeDossier) &&
+                  ((activeDossier.roles && activeDossier.roles.length > 0) ||
+                    (activeDossier.affiliations && activeDossier.affiliations.length > 0)) && (
+                    <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
+                      <h3 className="font-headline-sm text-on-surface font-bold">
+                        Roles, Revenue Split &amp; Contract Affiliations
+                      </h3>
+                      {activeDossier.revenueWeightSplit && (
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(activeDossier.revenueWeightSplit).map(([roleKey, pct]) => (
+                            <span
+                              key={roleKey}
+                              className="px-3 py-1 rounded-lg bg-surface-container text-[12px] font-mono-num text-on-surface"
+                            >
+                              {roleKey}: <strong>{pct}%</strong>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {activeDossier.affiliations && activeDossier.affiliations.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {activeDossier.affiliations.map((aff, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3 rounded-xl border border-outline-variant/25 flex flex-col gap-1"
+                            >
+                              <span className="font-label-xs uppercase text-secondary font-bold">
+                                {aff.role} · {aff.type}
+                              </span>
+                              {aff.agencyName ? (
+                                aff.agencyId ? (
+                                  <Link
+                                    to={`/creator/${aff.agencyId}`}
+                                    className="font-label-md font-bold text-on-surface hover:text-secondary hover:underline"
+                                  >
+                                    {aff.agencyName} →
+                                  </Link>
+                                ) : (
+                                  <span className="font-label-md font-bold text-on-surface">
+                                    {aff.agencyName}
+                                  </span>
+                                )
+                              ) : (
+                                <span className="font-body-sm text-on-surface-variant">
+                                  Self-Represented / Independent
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                {/* Discography, Filmography & Awards (Schema A) */}
+                {((activeDossier.discography && activeDossier.discography.length > 0) ||
+                  (activeDossier.filmography && activeDossier.filmography.length > 0) ||
+                  (activeDossier.awards && activeDossier.awards.length > 0)) && (
+                  <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
                     <h3 className="font-headline-sm text-on-surface font-bold">
-                      Affiliated Artist Roster ({rosterArtists.length})
+                      Catalog Highlights &amp; Recognitions
                     </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {activeDossier.discography && activeDossier.discography.length > 0 && (
+                        <div>
+                          <span className="font-label-xs uppercase text-secondary font-bold block mb-2">
+                            Selected Discography
+                          </span>
+                          <ul className="divide-y divide-outline-variant/20 text-[13px]">
+                            {activeDossier.discography.map((d, idx) => (
+                              <li key={idx} className="py-1.5 flex justify-between gap-2">
+                                <span className="font-semibold text-on-surface">{d.title}</span>
+                                <span className="text-on-surface-variant font-mono-num">
+                                  {d.type} · {d.year}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {activeDossier.filmography && activeDossier.filmography.length > 0 && (
+                        <div>
+                          <span className="font-label-xs uppercase text-secondary font-bold block mb-2">
+                            Selected Filmography
+                          </span>
+                          <ul className="divide-y divide-outline-variant/20 text-[13px]">
+                            {activeDossier.filmography.map((f, idx) => (
+                              <li key={idx} className="py-1.5 flex justify-between gap-2">
+                                <span className="font-semibold text-on-surface">{f.title}</span>
+                                <span className="text-on-surface-variant font-mono-num">
+                                  {f.role} · {f.year}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                    {activeDossier.awards && activeDossier.awards.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {activeDossier.awards.map((aw, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2.5 py-1 rounded bg-on-tertiary-container/10 text-on-tertiary-container text-[11px] font-semibold"
+                          >
+                            ★ {aw}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Agency Roster List (Schema B) */}
+                {isAgencyEntity(activeDossier) && (
+                  <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-headline-sm text-on-surface font-bold">
+                        Affiliated Talent Roster ({rosterArtists.length})
+                      </h3>
+                      <span className="font-mono-num text-[12px] text-secondary font-bold">
+                        Crippo Agency Score: {activeDossier.agencyCrippoScore || 80}/100
+                      </span>
+                    </div>
                     {rosterArtists.length === 0 ? (
                       <p className="font-body-sm text-on-surface-variant">
                         No affiliated solo creators linked yet.
@@ -998,7 +1234,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                               {art.stageName}
                             </span>
                             <span className="font-body-sm text-on-surface-variant">
-                              {art.category} · {art.city}
+                              {art.primaryRole || art.category} · {art.city}
                             </span>
                             <span className="text-[11px] text-on-surface-variant block mt-0.5 tabular-nums">
                               {(art.subscribers || 0).toLocaleString()} followers
@@ -1007,6 +1243,56 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                         ))}
                       </div>
                     )}
+                  </section>
+                )}
+
+                {/* Brand Sponsor Dossier (Schema C) */}
+                {isBrandEntity(activeDossier) && (
+                  <section className="border-t border-outline-variant/25 pt-6 flex flex-col gap-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-headline-sm text-on-surface font-bold">
+                        Sponsor Campaign Profile &amp; Creator Collaborations
+                      </h3>
+                      <span className="px-2.5 py-1 rounded bg-on-tertiary-container/15 text-on-tertiary-container font-label-xs uppercase font-bold">
+                        {activeDossier.paymentReliabilityBadge || 'CamPay Escrow Eligible'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-[13px]">
+                      <div className="p-3 rounded-xl border border-outline-variant/25">
+                        <span className="font-label-xs uppercase text-on-surface-variant block">
+                          Typical Campaign Tier
+                        </span>
+                        <span className="font-bold text-on-surface mt-1 block">
+                          {activeDossier.typicalCampaignTier || 'Mid-Market (250K–1M XAF)'}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl border border-outline-variant/25">
+                        <span className="font-label-xs uppercase text-on-surface-variant block">
+                          Target Creator Niches
+                        </span>
+                        <span className="font-bold text-on-surface mt-1 block">
+                          {(activeDossier.targetNiches || []).join(', ') || 'Music, Comedy, Lifestyle'}
+                        </span>
+                      </div>
+                    </div>
+                    {activeDossier.pastCreatorCollaborations &&
+                      activeDossier.pastCreatorCollaborations.length > 0 && (
+                        <div>
+                          <span className="font-label-xs uppercase text-secondary font-bold block mb-1.5">
+                            Notable Creator Ambassadors &amp; Campaigns
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {activeDossier.pastCreatorCollaborations.map((col, idx) => (
+                              <span
+                                key={idx}
+                                className="px-3 py-1 rounded-lg bg-surface-container text-[12px] font-medium text-on-surface"
+                              >
+                                {col}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                   </section>
                 )}
 
@@ -1176,19 +1462,36 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                       </span>
                     </div>
                     <div className="py-2.5 flex justify-between gap-2">
-                      <span className="text-on-surface-variant">Origin</span>
+                      <span className="text-on-surface-variant">Origin &amp; Base</span>
                       <span className="font-semibold text-on-surface text-right">
+                        {activeDossier.hometown && activeDossier.hometown !== activeDossier.city
+                          ? `${activeDossier.hometown} → `
+                          : ''}
                         {activeDossier.city}, {activeDossier.country}
                       </span>
                     </div>
-                    {activeDossier.age ? (
+                    {activeDossier.activeSince && (
                       <div className="py-2.5 flex justify-between gap-2">
-                        <span className="text-on-surface-variant">Age</span>
-                        <span className="font-semibold text-on-surface">{activeDossier.age}</span>
+                        <span className="text-on-surface-variant">Active Since</span>
+                        <span className="font-semibold text-on-surface">{activeDossier.activeSince}</span>
                       </div>
-                    ) : null}
+                    )}
+                    {activeDossier.foundedYear && (
+                      <div className="py-2.5 flex justify-between gap-2">
+                        <span className="text-on-surface-variant">Founded</span>
+                        <span className="font-semibold text-on-surface">{activeDossier.foundedYear}</span>
+                      </div>
+                    )}
+                    {activeDossier.languages && activeDossier.languages.length > 0 && (
+                      <div className="py-2.5 flex justify-between gap-2">
+                        <span className="text-on-surface-variant">Languages</span>
+                        <span className="font-semibold text-on-surface text-right">
+                          {activeDossier.languages.join(', ')}
+                        </span>
+                      </div>
+                    )}
                     <div className="py-2.5 flex justify-between gap-2">
-                      <span className="text-on-surface-variant">Genres</span>
+                      <span className="text-on-surface-variant">Genres / Focus</span>
                       <span className="font-semibold text-on-surface text-right">
                         {activeDossier.genres?.length
                           ? activeDossier.genres.join(', ')
@@ -1229,7 +1532,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                     <div className="py-2.5 flex justify-between gap-2">
                       <span className="text-on-surface-variant">Market Grade</span>
                       <span className="font-bold text-secondary">
-                        {activeDossier.wikiGrade || 'B-Index'}
+                        {activeDossier.wikiGrade || 'INDEX-237'}
                       </span>
                     </div>
                   </div>
@@ -1284,7 +1587,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                   type="text"
                   value={directorySearch}
                   onChange={(e) => setDirectorySearch(e.target.value)}
-                  placeholder="Search creators, genres, cities, or record labels..."
+                  placeholder="Search 300 creators, labels, brands, genres, or cities..."
                   className="w-full bg-transparent text-body-md text-on-surface placeholder:text-outline outline-none"
                 />
                 {directorySearch && (
@@ -1298,110 +1601,202 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                 )}
               </div>
 
-              {isAdmin && (
-                <button
-                  type="button"
-                  disabled={syncingCreators}
-                  onClick={handleSyncCreators}
-                  className="px-4 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold shrink-0 hover:border-secondary"
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <a
+                  href="/data/crippo_directory_300.csv"
+                  download
+                  className="px-3 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold hover:border-secondary"
                 >
-                  {syncingCreators ? 'Syncing...' : 'Sync YouTube/Apify Creators'}
-                </button>
+                  CSV (300)
+                </a>
+                <a
+                  href="/data/crippo_directory_300.json"
+                  download
+                  className="px-3 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold hover:border-secondary"
+                >
+                  JSON (300)
+                </a>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    disabled={syncingCreators}
+                    onClick={handleSyncCreators}
+                    className="px-4 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold hover:border-secondary"
+                  >
+                    {syncingCreators ? 'Syncing...' : 'Sync YouTube/Apify'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Scope & Gender Filters */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { id: 'all', label: `All (${scopeCounts.all})` },
+                  { id: 'creators', label: `Creators (${scopeCounts.creators})` },
+                  { id: 'rising', label: `Rising Hopes (${scopeCounts.rising})` },
+                  { id: 'agencies', label: `Labels & Agencies (${scopeCounts.agencies})` },
+                  { id: 'brands', label: `Brands (${scopeCounts.brands})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setScopeFilter(tab.id as typeof scopeFilter)}
+                    className={`px-3 py-1.5 rounded-lg font-label-xs uppercase font-bold transition-colors border ${
+                      scopeFilter === tab.id
+                        ? 'border-secondary bg-secondary text-white'
+                        : 'border-outline-variant/35 text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {(scopeFilter === 'all' || scopeFilter === 'creators' || scopeFilter === 'rising') && (
+                <div className="flex items-center gap-1.5">
+                  {(['ALL', 'M', 'F'] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGenderFilter(g)}
+                      className={`px-2.5 py-1 rounded-md font-label-xs uppercase font-bold border ${
+                        genderFilter === g
+                          ? 'border-primary bg-primary text-on-primary'
+                          : 'border-outline-variant/35 text-on-surface-variant'
+                      }`}
+                    >
+                      {g === 'ALL' ? 'All Genders' : g === 'M' ? 'Male (100)' : 'Female (150)'}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
             {filteredDirectory.length === 0 ? (
               <div className="py-10 text-center flex flex-col items-center gap-3">
                 <p className="font-body-md text-on-surface-variant">
-                  No creators match your search yet.
+                  No profiles match your search yet.
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
-                {filteredDirectory.map((ent) => {
-                  const genreAndLocation = `${
-                    ent.genres && ent.genres.length > 0 ? ent.genres.join(', ') : ent.category
-                  } · ${ent.city}, ${ent.country}`;
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
+                  {filteredDirectory.slice(0, visibleCount).map((ent) => {
+                    const genreAndLocation = `${
+                      ent.genres && ent.genres.length > 0 ? ent.genres.slice(0, 3).join(', ') : ent.category
+                    } · ${ent.city}, ${ent.country}`;
+                    const badgeLabel = ent.kycStatus === 'verified'
+                      ? 'Verified'
+                      : isBrandEntity(ent)
+                      ? 'Brand'
+                      : isAgencyEntity(ent)
+                      ? 'Label/Agency'
+                      : isRisingEntity(ent)
+                      ? 'Rising'
+                      : 'Indexed';
 
-                  return (
-                    <article
-                      key={ent.id}
-                      className="pt-4 border-t border-outline-variant/25 flex flex-col justify-between gap-3.5"
-                    >
-                      <Link
-                        to={`/creator/${ent.id}`}
-                        className="group flex items-start gap-3.5 min-w-0"
+                    return (
+                      <article
+                        key={ent.id}
+                        className="pt-4 border-t border-outline-variant/25 flex flex-col justify-between gap-3.5"
                       >
-                        <img
-                          src={getCoverImage(ent.category, ent.avatarUrl)}
-                          alt={ent.stageName}
-                          referrerPolicy="no-referrer"
-                          className="w-14 h-14 rounded-xl object-cover shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <h2 className="font-headline-sm text-[17px] font-bold text-on-surface group-hover:text-secondary transition-colors truncate">
-                              {ent.stageName}
-                            </h2>
-                            <span
-                              className={`text-[10px] font-label-xs uppercase shrink-0 font-bold ${
-                                ent.kycStatus === 'verified'
-                                  ? 'text-on-tertiary-container'
-                                  : 'text-on-surface-variant'
-                              }`}
-                            >
-                              {ent.kycStatus === 'verified' ? 'Verified' : 'Indexed'}
-                            </span>
-                          </div>
-
-                          <p className="text-[12px] text-on-surface-variant truncate mt-0.5">
-                            {genreAndLocation}
-                            {ent.labelName || ent.agencyName
-                              ? ` · ${ent.labelName || ent.agencyName}`
-                              : ''}
-                          </p>
-
-                          <p className="text-[11px] font-mono-num text-on-surface-variant mt-0.5 tabular-nums">
-                            {(ent.subscribers || 0).toLocaleString()} followers
-                          </p>
-
-                          {ent.description && (
-                            <p className="font-body-sm text-on-surface-variant line-clamp-2 mt-1.5">
-                              {ent.description}
-                            </p>
-                          )}
-                        </div>
-                      </Link>
-
-                      <div className="flex items-center justify-between gap-3 pt-1">
                         <Link
                           to={`/creator/${ent.id}`}
-                          className="font-label-xs uppercase font-bold text-secondary hover:underline"
+                          className="group flex items-start gap-3.5 min-w-0"
                         >
-                          View Full Profile →
+                          <img
+                            src={getCoverImage(ent.category, ent.avatarUrl)}
+                            alt={ent.stageName}
+                            referrerPolicy="no-referrer"
+                            className="w-14 h-14 rounded-xl object-cover shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <h2 className="font-headline-sm text-[17px] font-bold text-on-surface group-hover:text-secondary transition-colors truncate">
+                                {ent.stageName}
+                              </h2>
+                              <span
+                                className={`text-[10px] font-label-xs uppercase shrink-0 font-bold ${
+                                  ent.kycStatus === 'verified'
+                                    ? 'text-on-tertiary-container'
+                                    : isRisingEntity(ent)
+                                    ? 'text-secondary'
+                                    : 'text-on-surface-variant'
+                                }`}
+                              >
+                                {badgeLabel}
+                              </span>
+                            </div>
+
+                            <p className="text-[12px] text-on-surface-variant truncate mt-0.5">
+                              {genreAndLocation}
+                              {ent.labelName || ent.agencyName
+                                ? ` · ${ent.labelName || ent.agencyName}`
+                                : ''}
+                            </p>
+
+                            <p className="text-[11px] font-mono-num text-on-surface-variant mt-0.5 tabular-nums">
+                              {(ent.subscribers || 0).toLocaleString()} followers
+                              {ent.gender ? ` · ${ent.gender}` : ''}
+                            </p>
+
+                            {ent.description && (
+                              <p className="font-body-sm text-on-surface-variant line-clamp-2 mt-1.5">
+                                {ent.description}
+                              </p>
+                            )}
+                          </div>
                         </Link>
 
-                        {!ent.isClaimed && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!user) {
-                                setAuthPromptAction('claim a creator profile');
-                                return;
-                              }
-                              setClaimTarget(ent);
-                              setViewTab('kyc');
-                            }}
-                            className="px-3.5 py-1.5 rounded-lg bg-primary text-on-primary font-label-xs uppercase font-bold hover:opacity-95"
+                        <div className="flex items-center justify-between gap-3 pt-1">
+                          <Link
+                            to={`/creator/${ent.id}`}
+                            className="font-label-xs uppercase font-bold text-secondary hover:underline"
                           >
-                            Claim Profile
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
+                            View Full Profile →
+                          </Link>
+
+                          {!ent.isClaimed && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!user) {
+                                  setAuthPromptAction('claim a creator profile');
+                                  return;
+                                }
+                                setClaimTarget(ent);
+                                if (isAgencyEntity(ent)) setAffiliation('agency');
+                                else setAffiliation('solo');
+                                setViewTab('kyc');
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg bg-primary text-on-primary font-label-xs uppercase font-bold hover:opacity-95"
+                            >
+                              Claim Profile
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {filteredDirectory.length > visibleCount && (
+                  <div className="flex flex-col items-center gap-2 pt-4">
+                    <span className="font-body-sm text-on-surface-variant tabular-nums">
+                      Showing {Math.min(visibleCount, filteredDirectory.length)} of {filteredDirectory.length} matching profiles
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleCount((v) => v + 36)}
+                      className="px-6 py-2.5 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold hover:border-secondary"
+                    >
+                      Load More Profiles (+36)
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )

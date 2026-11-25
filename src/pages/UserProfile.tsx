@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { WalletModal } from '../components/WalletModal';
 import { formatTimeRemaining } from '../utils/media';
+import { isAgencyEntity, isBrandEntity } from '../utils/entityDirectory';
 
 export function UserProfile() {
   const { user, profile, privateInfo, signOut } = useAuth();
@@ -678,7 +679,12 @@ export function UserProfile() {
               <div className="py-3 border-t border-outline-variant/25 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="font-label-xs uppercase text-on-tertiary-container font-bold">
-                    Verified {claimedEntity.entityType === 'agency' ? 'Agency / Label' : 'Creator'}
+                    Verified{' '}
+                    {isBrandEntity(claimedEntity)
+                      ? 'Brand Sponsor'
+                      : isAgencyEntity(claimedEntity)
+                      ? 'Agency / Label'
+                      : 'Creator'}
                   </span>
                   <Link
                     to={`/creator/${claimedEntity.id}`}

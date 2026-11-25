@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../services/firebase';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useMarket } from '../contexts/MarketContext';
+import { CRIPPO_DIRECTORY_300, CRIPPO_DIRECTORY_COUNTS } from '../data/crippoDirectory300';
+import { toFirestoreCompliantEntity } from '../utils/entityDirectory';
 import type { Race, Entity, CatalystSegment, PredictionMarket } from '../types/crippo';
 
 const APIFY_ACTORS = [
@@ -31,6 +33,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   const {
     races,
     entities,
+    firestoreEntityIds,
     catalysts,
     myMemos,
     myPayments,
@@ -87,6 +90,8 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   const [entInstagram, setEntInstagram] = useState('');
   const [entAvatarUrl, setEntAvatarUrl] = useState('');
   const [entUploading, setEntUploading] = useState(false);
+  const [batchSeeding, setBatchSeeding] = useState(false);
+  const [batchProgress, setBatchProgress] = useState('');
 
   // Apify & Cultural Scraper State
   const [scraperActor, setScraperActor] = useState(APIFY_ACTORS[0].id);
@@ -707,6 +712,35 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
       showToast('Upload Failed', (err as Error).message || 'Could not upload photo.', 'error');
     } finally {
       setEntUploading(false);
+    }
+  };
+
+  const handleBatchSeedDirectory = async () => {
+    const missing = CRIPPO_DIRECTORY_300.filter((e) => !firestoreEntityIds.has(e.id));
+    if (missing.length === 0) {
+      showToast('Already Synced', 'All 300 researched entities are already stored in Firestore.');
+      return;
+    }
+    setBatchSeeding(true);
+    let synced = 0;
+    try {
+      const CHUNK = 100;
+      for (let i = 0; i < missing.length; i += CHUNK) {
+        const slice = missing.slice(i, i + CHUNK);
+        setBatchProgress(`Seeding ${Math.min(i + slice.length, missing.length)} / ${missing.length}...`);
+        const batch = writeBatch(db);
+        for (const ent of slice) {
+          batch.set(doc(db, 'entities', ent.id), toFirestoreCompliantEntity(ent, {}, true), { merge: true });
+        }
+        await batch.commit();
+        synced += slice.length;
+      }
+      showToast('300-Entity Directory Synced', `${synced} new profiles written to live Firestore /entities.`);
+    } catch (err: unknown) {
+      showToast('Batch Seed Error', (err as Error).message || 'Could not seed directory.', 'error');
+    } finally {
+      setBatchSeeding(false);
+      setBatchProgress('');
     }
   };
 
@@ -1549,28 +1583,85 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
             </button>
           </form>
 
-          <div className="lg:col-span-7 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-3">
+          <div className="lg:col-span-7 lg:border-l lg:border-outline-variant/25 lg:pl-6 flex flex-col gap-4">
+            <div className="p-4 rounded-xl border border-secondary/35 bg-secondary/5 flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="font-label-xs uppercase text-secondary font-bold block">
+                    300-Entity Master Directory Sync
+                  </span>
+                  <span className="font-body-sm text-on-surface-variant">
+                    {CRIPPO_DIRECTORY_COUNTS.male_creator} Male · {CRIPPO_DIRECTORY_COUNTS.female_creator} Female · {CRIPPO_DIRECTORY_COUNTS.label_agency} Labels/Agencies · {CRIPPO_DIRECTORY_COUNTS.brand} Brands · {CRIPPO_DIRECTORY_COUNTS.rising_hope} Rising Hopes
+                  </span>
+                </div>
+                <span className="font-mono-num text-[12px] font-bold text-on-surface">
+                  {firestoreEntityIds.size} live in Firestore
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={batchSeeding}
+                  onClick={handleBatchSeedDirectory}
+                  className="px-4 py-2 rounded-xl bg-on-tertiary-container text-white font-label-xs uppercase font-bold disabled:opacity-60"
+                >
+                  {batchSeeding
+                    ? batchProgress || 'Seeding Firestore...'
+                    : 'Auto-Seed All 300 Researched Entities to Firestore'}
+                </button>
+                <a
+                  href="/data/crippo_directory_300.csv"
+                  download
+                  className="px-3 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold hover:border-secondary"
+                >
+                  Download CSV
+                </a>
+                <a
+                  href="/data/crippo_directory_300.json"
+                  download
+                  className="px-3 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold hover:border-secondary"
+                >
+                  Download JSON
+                </a>
+              </div>
+            </div>
+
             <h2 className="font-headline-sm text-on-surface font-bold">
               Indexed Entities ({entities.length})
             </h2>
-            <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/25">
-              {entities.map((ent) => (
+            <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/25 max-h-[680px] overflow-y-auto pr-1">
+              {entities.slice(0, 120).map((ent) => (
                 <div
                   key={ent.id}
-                  className="py-3.5 flex items-center justify-between gap-3"
+                  className="py-3 flex items-center justify-between gap-3"
                 >
-                  <div>
-                    <span className="font-label-md font-bold text-on-surface">{ent.stageName}</span>
+                  <div className="min-w-0">
+                    <Link
+                      to={`/creator/${ent.id}`}
+                      className="font-label-md font-bold text-on-surface hover:text-secondary truncate block"
+                    >
+                      {ent.stageName}
+                    </Link>
                     <span className="block text-[12px] text-on-surface-variant">
-                      {ent.category} · {ent.city} · Claimed: {ent.isClaimed ? 'Yes' : 'No'} · KYC:{' '}
-                      {ent.kycStatus}
+                      {ent.category} · {ent.city}, {ent.country} · Claimed: {ent.isClaimed ? 'Yes' : 'No'} · KYC:{' '}
+                      {ent.kycStatus} {firestoreEntityIds.has(ent.id) ? '· Firestore' : '· Directory'}
                     </span>
                   </div>
-                  <span className="font-mono-num text-[12px] text-secondary font-bold">
+                  <span className="font-mono-num text-[12px] text-secondary font-bold shrink-0">
                     {(ent.subscribers || 0).toLocaleString()} subs
                   </span>
                 </div>
               ))}
+              {entities.length > 120 && (
+                <div className="py-3 text-center text-[12px] text-on-surface-variant">
+                  Showing first 120 of {entities.length} indexed profiles. View all on{' '}
+                  <Link to="/creators" className="text-secondary font-bold hover:underline">
+                    /creators
+                  </Link>
+                  .
+                </div>
+              )}
             </div>
           </div>
         </div>
