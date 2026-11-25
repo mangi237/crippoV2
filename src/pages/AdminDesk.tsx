@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../services/firebase';
 import { apiFetch } from '../services/api';
@@ -34,6 +34,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     catalysts,
     myMemos,
     myPayments,
+    myDividends,
     publicOrders,
     integrationStatus,
     isAdmin,
@@ -55,6 +56,8 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
   const [clearingPoolAmount, setClearingPoolAmount] = useState(500000);
   const [clearingCurrency, setClearingCurrency] = useState<'XAF' | 'USD' | 'EUR'>('XAF');
   const [periodLabel, setPeriodLabel] = useState('Q4 2026 Streaming');
+  const [payoutDeliveryMode, setPayoutDeliveryMode] = useState<'wallet' | 'momo'>('wallet');
+  const [ledgerFilter, setLedgerFilter] = useState<'ALL' | 'SHARE_PURCHASE' | 'WALLET_DEPOSIT' | 'WALLET_WITHDRAWAL' | 'MEMO_FEE' | 'BRAND_ESCROW'>('ALL');
   const [clearingBusy, setClearingBusy] = useState(false);
   const [watchdogResult, setWatchdogResult] = useState<{
     clearedForTranche2: boolean;
@@ -111,12 +114,84 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     () => catalysts.filter((c) => c.sentiment === 'risk_alert' || Math.abs(c.priceImpactPct) >= 10),
     [catalysts]
   );
-  const totalEscrowReserveXAF = useMemo(
+  const ledgerMetrics = useMemo(() => {
+    const successful = myPayments.filter((p) => p.status === 'SUCCESSFUL');
+    const sumBy = (type: string) =>
+      successful.filter((p) => p.type === type).reduce((a, p) => a + p.amountXAF, 0);
+
+    const sharePurchaseInflowXAF = sumBy('SHARE_PURCHASE');
+    const walletDepositInflowXAF = sumBy('WALLET_DEPOSIT');
+    const memoFeeInflowXAF = sumBy('MEMO_FEE');
+    const brandEscrowInflowXAF = sumBy('BRAND_ESCROW');
+    const walletWithdrawalOutflowXAF = sumBy('WALLET_WITHDRAWAL');
+
+    // Revenue Model 1: 5% Raise Origination Fee built into grossTargetXAF (5 / 105 of share purchases)
+    const originationProfitXAF = Math.round(sharePurchaseInflowXAF * (5 / 105));
+    // Revenue Model 2: Creator Memo Listing Fees (2,000 / 5,000 XAF)
+    const memoProfitXAF =
+      memoFeeInflowXAF > 0
+        ? memoFeeInflowXAF
+        : paidMemos.reduce((acc, m) => acc + (m.feeXAF || 0), 0);
+    // Revenue Model 3: 8% Brand Campaign Escrow Commission
+    const brandCommissionProfitXAF = Math.round(brandEscrowInflowXAF * 0.08);
+
+    // Revenue Model 4: 3% Royalty / Dividend Clearing Fee (deduplicated per race clearing event)
+    const clearingEvents = new Map<string, { raceId: string; poolXAF: number }>();
+    for (const d of myDividends) {
+      const key = `${d.raceId}::${d.periodLabel}`;
+      if (!clearingEvents.has(key)) {
+        clearingEvents.set(key, {
+          raceId: d.raceId,
+          poolXAF: d.clearedPoolXAF || d.payoutAmountXAF,
+        });
+      }
+    }
+    let clearingProfitXAF = 0;
+    for (const ev of clearingEvents.values()) {
+      const race = races.find((r) => r.id === ev.raceId);
+      const revPct = Math.max(1, race?.revSharePct || 25);
+      const grossAfterFee = ev.poolXAF / (revPct / 100);
+      clearingProfitXAF += Math.round(grossAfterFee * (0.03 / 0.97));
+    }
+
+    const totalPlatformProfitXAF =
+      originationProfitXAF + memoProfitXAF + brandCommissionProfitXAF + clearingProfitXAF;
+
+    const totalGrossInflowsXAF =
+      sharePurchaseInflowXAF + walletDepositInflowXAF + memoFeeInflowXAF + brandEscrowInflowXAF;
+
+    const netCustodyHeldXAF = Math.max(
+      0,
+      sharePurchaseInflowXAF +
+        walletDepositInflowXAF +
+        brandEscrowInflowXAF -
+        walletWithdrawalOutflowXAF -
+        originationProfitXAF -
+        brandCommissionProfitXAF
+    );
+
+    return {
+      sharePurchaseInflowXAF,
+      walletDepositInflowXAF,
+      memoFeeInflowXAF,
+      brandEscrowInflowXAF,
+      walletWithdrawalOutflowXAF,
+      originationProfitXAF,
+      memoProfitXAF,
+      brandCommissionProfitXAF,
+      clearingProfitXAF,
+      totalPlatformProfitXAF,
+      totalGrossInflowsXAF,
+      netCustodyHeldXAF,
+    };
+  }, [myPayments, paidMemos, myDividends, races]);
+
+  const filteredPayments = useMemo(
     () =>
-      myPayments
-        .filter((p) => p.status === 'SUCCESSFUL')
-        .reduce((a, p) => a + p.amountXAF, 0),
-    [myPayments]
+      ledgerFilter === 'ALL'
+        ? myPayments
+        : myPayments.filter((p) => p.type === ledgerFilter),
+    [myPayments, ledgerFilter]
   );
 
   const clearingRace = useMemo(
@@ -511,16 +586,42 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
     }
     setClearingBusy(true);
     try {
+      const holderPayloads = await Promise.all(
+        shareholders.map(async (s) => {
+          let momoPhone: string | undefined;
+          if (payoutDeliveryMode === 'momo') {
+            try {
+              const privSnap = await getDoc(doc(db, 'users', s.uid, 'private', 'info'));
+              if (privSnap.exists()) {
+                const rawPhone = String(privSnap.data()?.phone || '').replace(/\D/g, '');
+                if (/^2376\d{8}$/.test(rawPhone)) momoPhone = rawPhone;
+              }
+            } catch {
+              // Fallback cleanly to Crippo Wallet credit if private profile phone is absent
+            }
+          }
+          return {
+            uid: s.uid,
+            anonymousId: s.anonId,
+            sharesHeld: s.shares,
+            ...(momoPhone ? { momoPhone } : {}),
+          };
+        })
+      );
+
       const clearRes = await apiFetch<{
         grossXAF: number;
+        platformClearingFeeXAF: number;
         investorPoolXAF: number;
         clearingNote: string;
+        campayDispatchedCount: number;
         allocations: Array<{
           uid: string;
           anonymousId: string;
           sharesHeld: number;
           payoutAmountXAF: number;
           momoReference?: string;
+          disbursementStatus: 'disbursed' | 'pending';
         }>;
       }>('/api/agents/dividend-clearing', {
         method: 'POST',
@@ -532,18 +633,32 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           currency: clearingCurrency,
           revSharePct: r.revSharePct,
           totalShares: shareholders.reduce((a, s) => a + s.shares, 0),
-          holders: shareholders.map((s) => ({
-            uid: s.uid,
-            anonymousId: s.anonId,
-            sharesHeld: s.shares,
-          })),
+          dispatchCamPay: payoutDeliveryMode === 'momo',
+          holders: holderPayloads,
         }),
       });
 
-      let disbursedCount = 0;
+      let walletCreditedCount = 0;
+      let momoSentCount = 0;
       for (const alloc of clearRes.allocations || []) {
         const payoutId = `div_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const amount = Math.max(1, alloc.payoutAmountXAF);
+        const sentDirectMoMo = alloc.disbursementStatus === 'disbursed';
+
+        if (!sentDirectMoMo) {
+          try {
+            await updateDoc(doc(db, 'users', alloc.uid), {
+              walletBalanceXAF: increment(amount),
+              updatedAt: serverTimestamp(),
+            });
+            walletCreditedCount++;
+          } catch {
+            // Continue logging dividend ledger + notification even if user doc is missing
+          }
+        } else {
+          momoSentCount++;
+        }
+
         await setDoc(doc(db, 'dividend_payouts', payoutId), {
           id: payoutId,
           raceId: r.id,
@@ -553,23 +668,26 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           sharesHeld: alloc.sharesHeld,
           clearedPoolXAF: clearRes.investorPoolXAF,
           payoutAmountXAF: amount,
-          momoReference: alloc.momoReference || `DIV-${Date.now().toString().slice(-6)}`,
+          momoReference: alloc.momoReference || `WALLET-${Date.now().toString().slice(-6)}`,
           periodLabel: periodLabel.trim() || 'Royalty Clearing',
           status: 'disbursed',
           createdAt: serverTimestamp(),
         });
+
         await sendNotification({
           recipientUid: alloc.uid,
           type: 'dividend',
-          title: `Dividend Disbursed: +${amount.toLocaleString()} XAF`,
-          message: `Payout for ${alloc.sharesHeld} shares in "${r.title}" (${periodLabel.trim() || 'Royalty Clearing'}).`,
+          title: `Royalty Paid: +${amount.toLocaleString()} XAF`,
+          message: sentDirectMoMo
+            ? `Sent +${amount.toLocaleString()} XAF directly to your MoMo for ${alloc.sharesHeld} shares in "${r.title}" (${periodLabel.trim() || 'Royalty Clearing'}).`
+            : `Credited +${amount.toLocaleString()} XAF to your Crippo Wallet for ${alloc.sharesHeld} shares in "${r.title}" (${periodLabel.trim() || 'Royalty Clearing'}).`,
           raceId: r.id,
         });
-        disbursedCount++;
       }
+
       showToast(
-        'Dividends Cleared & Disbursed',
-        `${clearRes.clearingNote} (${disbursedCount} payouts logged)`
+        'Royalties Cleared & Auto-Disbursed',
+        `${clearRes.clearingNote} (Fee: ${clearRes.platformClearingFeeXAF.toLocaleString()} XAF · ${walletCreditedCount} wallet credits · ${momoSentCount} direct MoMo payouts)`
       );
     } catch (err) {
       showToast('Clearing Error', (err as Error).message || 'Could not disburse dividends.', 'error');
@@ -848,13 +966,13 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         </div>
         <div>
           <span className="font-label-xs uppercase text-on-surface-variant">
-            Escrow Liquid Reserve
+            CamPay Custody Held
           </span>
           <div className="font-headline-lg-mobile font-mono-num text-on-tertiary-container mt-1">
-            {totalEscrowReserveXAF.toLocaleString()} XAF
+            {ledgerMetrics.netCustodyHeldXAF.toLocaleString()} XAF
           </div>
           <span className="font-body-sm text-on-surface-variant">
-            5% Origination Fee: {Math.round(totalEscrowReserveXAF * 0.05).toLocaleString()} XAF
+            Platform Net Profits: {ledgerMetrics.totalPlatformProfitXAF.toLocaleString()} XAF (4 models)
           </span>
         </div>
       </div>
@@ -866,7 +984,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           { key: 'clearing', label: 'Royalty & Escrow Clearing' },
           { key: 'entities', label: `Wikipedia Entities (${entities.length})` },
           { key: 'scrapers', label: 'AI Agents & Scrapers' },
-          { key: 'ledger', label: `CamPay Ledger (${myPayments.length})` },
+          { key: 'ledger', label: `Custody & Profits (${myPayments.length})` },
         ].map((t) => (
           <button
             key={t.key}
@@ -1234,7 +1352,31 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   </select>
                 </div>
                 <div className="font-body-sm text-on-surface-variant">
-                  Pledged Share: <strong className="text-on-tertiary-container">{clearingRace.revSharePct}%</strong> · Auto-converted via BEAC FX rate in server clearing agent.
+                  Pledged Share: <strong className="text-on-tertiary-container">{clearingRace.revSharePct}%</strong> · Deducts <strong className="text-on-surface">3% Clearing Fee</strong> before pro-rata shareholder split.
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayoutDeliveryMode('wallet')}
+                    className={`py-2 px-2.5 rounded-xl border font-label-xs uppercase font-bold transition-colors ${
+                      payoutDeliveryMode === 'wallet'
+                        ? 'border-secondary bg-secondary/15 text-secondary'
+                        : 'border-outline-variant/40 text-on-surface-variant'
+                    }`}
+                  >
+                    Auto-Credit Wallets
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayoutDeliveryMode('momo')}
+                    className={`py-2 px-2.5 rounded-xl border font-label-xs uppercase font-bold transition-colors ${
+                      payoutDeliveryMode === 'momo'
+                        ? 'border-secondary bg-secondary/15 text-secondary'
+                        : 'border-outline-variant/40 text-on-surface-variant'
+                    }`}
+                  >
+                    Direct CamPay MoMo
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -1242,7 +1384,11 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   onClick={() => handleDistributeDividends(clearingRace)}
                   className="py-3 rounded-xl bg-primary-container text-white font-label-md font-bold uppercase tracking-wider disabled:opacity-50"
                 >
-                  {clearingBusy ? 'Running Clearing Agent...' : 'Run Dividend Clearing Agent & Disburse'}
+                  {clearingBusy
+                    ? 'Running Clearing Agent...'
+                    : payoutDeliveryMode === 'momo'
+                    ? 'Clear & Push MoMo Payouts'
+                    : 'Clear & Credit Shareholder Wallets'}
                 </button>
               </div>
             </div>
@@ -1505,12 +1651,124 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         </div>
       )}
 
-      {/* TAB 5: CAMPAY RESERVE LEDGER */}
+      {/* TAB 5: CAMPAY CUSTODY & PLATFORM PROFITS LEDGER */}
       {adminTab === 'ledger' && (
-        <div className="flex flex-col gap-3">
-          <h2 className="font-headline-sm text-on-surface font-bold">CamPay Escrow Reserve Ledger</h2>
+        <div className="flex flex-col gap-6">
+          <div>
+            <h2 className="font-headline-sm text-on-surface font-bold">
+              Platform Profits by Revenue Model &amp; CamPay Custody
+            </h2>
+            <p className="font-body-sm text-on-surface-variant mt-0.5">
+              Live revenue across Crippo&apos;s 4 fee streams plus net client funds held in CamPay merchant custody.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 tabular-nums">
+            <div className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-low/60">
+              <span className="font-label-xs uppercase text-on-surface-variant block">
+                1 · 5% Raise Origination
+              </span>
+              <span className="font-ticker-val font-mono-num text-on-surface font-bold text-[18px] mt-1 block">
+                {ledgerMetrics.originationProfitXAF.toLocaleString()} XAF
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                From {ledgerMetrics.sharePurchaseInflowXAF.toLocaleString()} XAF share sales
+              </span>
+            </div>
+            <div className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-low/60">
+              <span className="font-label-xs uppercase text-on-surface-variant block">
+                2 · Memo Listing Fees
+              </span>
+              <span className="font-ticker-val font-mono-num text-on-surface font-bold text-[18px] mt-1 block">
+                {ledgerMetrics.memoProfitXAF.toLocaleString()} XAF
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                {paidMemos.length} verified memos (2k/5k XAF)
+              </span>
+            </div>
+            <div className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-low/60">
+              <span className="font-label-xs uppercase text-on-surface-variant block">
+                3 · 8% Brand Escrow
+              </span>
+              <span className="font-ticker-val font-mono-num text-on-surface font-bold text-[18px] mt-1 block">
+                {ledgerMetrics.brandCommissionProfitXAF.toLocaleString()} XAF
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                From {ledgerMetrics.brandEscrowInflowXAF.toLocaleString()} XAF campaigns
+              </span>
+            </div>
+            <div className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-low/60">
+              <span className="font-label-xs uppercase text-on-surface-variant block">
+                4 · 3% Royalty Clearing
+              </span>
+              <span className="font-ticker-val font-mono-num text-on-surface font-bold text-[18px] mt-1 block">
+                {ledgerMetrics.clearingProfitXAF.toLocaleString()} XAF
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                From {myDividends.length} shareholder payouts
+              </span>
+            </div>
+            <div className="p-4 rounded-xl border border-secondary/40 bg-secondary/10">
+              <span className="font-label-xs uppercase text-secondary font-bold block">
+                Total Platform Profit
+              </span>
+              <span className="font-ticker-val font-mono-num text-secondary font-bold text-[20px] mt-1 block">
+                {ledgerMetrics.totalPlatformProfitXAF.toLocaleString()} XAF
+              </span>
+              <span className="text-[11px] text-on-surface-variant">
+                Custody Held: {ledgerMetrics.netCustodyHeldXAF.toLocaleString()} XAF
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-low/40 text-[12px] text-on-surface-variant grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <strong className="text-on-surface block mb-0.5">1. Where Funds Are Held</strong>
+              MTN MoMo, Orange Money &amp; Card inflows settle into Crippo&apos;s CamPay merchant wallet and are tracked per project &amp; user balance in Firestore.
+            </div>
+            <div>
+              <strong className="text-on-surface block mb-0.5">2. Creator Production Tranches</strong>
+              Capital stays locked in escrow until Admin verifies milestone mobilization (Tranche 1) and ISRC / compliance checks (Tranche 2).
+            </div>
+            <div>
+              <strong className="text-on-surface block mb-0.5">3. Auto-Disbursement &amp; Cashout</strong>
+              Royalty Clearing deducts 3%, credits shareholder wallets or pushes CamPay MoMo payouts, and users cash out any time via Wallet Withdraw.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+            <h3 className="font-headline-sm text-on-surface font-bold">
+              CamPay Transaction Ledger ({filteredPayments.length})
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'ALL', label: 'All' },
+                  { id: 'SHARE_PURCHASE', label: 'Shares' },
+                  { id: 'WALLET_DEPOSIT', label: 'Deposits' },
+                  { id: 'WALLET_WITHDRAWAL', label: 'Withdrawals' },
+                  { id: 'MEMO_FEE', label: 'Memos' },
+                  { id: 'BRAND_ESCROW', label: 'Brand Escrow' },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setLedgerFilter(f.id)}
+                  className={`px-2.5 py-1 rounded-lg font-label-xs uppercase font-bold border ${
+                    ledgerFilter === f.id
+                      ? 'border-secondary bg-secondary text-on-secondary'
+                      : 'border-outline-variant/35 text-on-surface-variant'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/25">
-            {myPayments.map((p) => (
+            {filteredPayments.map((p) => (
               <div
                 key={p.id}
                 className="py-3.5 flex items-center justify-between"
@@ -1525,7 +1783,17 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   <span className="font-ticker-val font-bold block">
                     {p.amountXAF.toLocaleString()} XAF
                   </span>
-                  <span className="font-label-xs uppercase text-on-tertiary-container">{p.status}</span>
+                  <span
+                    className={`font-label-xs uppercase font-bold ${
+                      p.status === 'SUCCESSFUL'
+                        ? 'text-on-tertiary-container'
+                        : p.status === 'FAILED'
+                        ? 'text-error'
+                        : 'text-on-surface-variant'
+                    }`}
+                  >
+                    {p.status}
+                  </span>
                 </div>
               </div>
             ))}

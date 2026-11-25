@@ -89,8 +89,6 @@ async function startServer() {
           body.listenerRegion === 'diaspora_mixed' || body.listenerRegion === 'global_eu_us'
             ? body.listenerRegion
             : 'cameroon_africa',
-        preferredSharePriceXAF:
-          typeof body.preferredSharePriceXAF === 'number' ? Number(body.preferredSharePriceXAF) : undefined,
         wikiGrade: typeof body.wikiGrade === 'string' ? body.wikiGrade : undefined,
       });
 

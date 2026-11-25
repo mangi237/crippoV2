@@ -30,7 +30,6 @@ export interface UnderwriteInput {
   masterRightsOwned: boolean;
   distributor: string;
   listenerRegion?: ListenerRegion;
-  preferredSharePriceXAF?: number;
   wikiGrade?: string;
 }
 
@@ -102,8 +101,7 @@ const REGIONAL_STREAM_RATES: Record<
 export function pickCreatorFairSharePrice(
   listenerRegion: ListenerRegion,
   subscribers: number,
-  monthlyViews: number,
-  preferredSharePriceXAF?: number
+  monthlyViews: number
 ): { unitSharePriceXAF: number; maxSafeSharePriceXAF: number } {
   const reachScore = Math.max(subscribers, Math.round(monthlyViews / 3));
 
@@ -113,7 +111,7 @@ export function pickCreatorFairSharePrice(
   if (listenerRegion === 'cameroon_africa') {
     if (reachScore < 25_000) {
       recommended = 1_000;
-      maxSafe = 5_000;
+      maxSafe = 2_500;
     } else if (reachScore < 150_000) {
       recommended = 2_500;
       maxSafe = 5_000;
@@ -124,7 +122,7 @@ export function pickCreatorFairSharePrice(
   } else if (listenerRegion === 'diaspora_mixed') {
     if (reachScore < 25_000) {
       recommended = 2_500;
-      maxSafe = 10_000;
+      maxSafe = 5_000;
     } else if (reachScore < 150_000) {
       recommended = 5_000;
       maxSafe = 10_000;
@@ -137,12 +135,7 @@ export function pickCreatorFairSharePrice(
     maxSafe = 15_000;
   }
 
-  const chosen =
-    typeof preferredSharePriceXAF === 'number' && Number.isFinite(preferredSharePriceXAF) && preferredSharePriceXAF >= 500
-      ? Math.min(maxSafe, Math.max(500, Math.round(preferredSharePriceXAF)))
-      : recommended;
-
-  return { unitSharePriceXAF: chosen, maxSafeSharePriceXAF: maxSafe };
+  return { unitSharePriceXAF: recommended, maxSafeSharePriceXAF: maxSafe };
 }
 
 function buildDeterministicUnderwriteScores(
@@ -344,8 +337,7 @@ Provide concise underwriting reasoning, a short regionalValuationNote summarizin
   const { unitSharePriceXAF } = pickCreatorFairSharePrice(
     listenerRegion,
     effectiveSubscribers,
-    effectiveMonthlyViews,
-    input.preferredSharePriceXAF
+    effectiveMonthlyViews
   );
   const totalShares = Math.max(10, Math.ceil(grossTargetXAF / unitSharePriceXAF));
   const pctPerShare = Number((input.revSharePct / Math.max(1, totalShares)).toFixed(4));
