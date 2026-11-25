@@ -818,7 +818,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           onClick={onOpenApiSetup}
           className="px-4 py-2 rounded-xl border border-outline-variant/40 text-on-surface font-label-xs uppercase font-bold self-start hover:border-secondary"
         >
-          API Keys ({integrationStatus?.campayConfigured ? 'CamPay Ready' : 'Check Keys'})
+          API Keys ({integrationStatus?.fapshiConfigured ? 'Fapshi Ready' : 'Check Keys'})
         </button>
       </div>
 
@@ -866,7 +866,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
           { key: 'clearing', label: 'Royalty & Escrow Clearing' },
           { key: 'entities', label: `Wikipedia Entities (${entities.length})` },
           { key: 'scrapers', label: 'AI Agents & Scrapers' },
-          { key: 'ledger', label: `CamPay Ledger (${myPayments.length})` },
+          { key: 'ledger', label: `Fapshi Ledger (${myPayments.length})` },
         ].map((t) => (
           <button
             key={t.key}
@@ -1139,7 +1139,7 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
                   <div>
                     <div className="font-label-md font-bold">Tranche 1 · Production Mobilization</div>
                     <div className="font-body-sm text-on-surface-variant">
-                      CamPay Milestone Release
+                      Fapshi Milestone Release
                     </div>
                   </div>
                   <button
@@ -1505,10 +1505,10 @@ export function AdminDesk({ onOpenApiSetup }: AdminDeskProps) {
         </div>
       )}
 
-      {/* TAB 5: CAMPAY RESERVE LEDGER */}
+      {/* TAB 5: FAPSHI RESERVE LEDGER */}
       {adminTab === 'ledger' && (
         <div className="flex flex-col gap-3">
-          <h2 className="font-headline-sm text-on-surface font-bold">CamPay Escrow Reserve Ledger</h2>
+          <h2 className="font-headline-sm text-on-surface font-bold">Fapshi Escrow Reserve Ledger</h2>
           <div className="divide-y divide-outline-variant/25 border-t border-outline-variant/25">
             {myPayments.map((p) => (
               <div

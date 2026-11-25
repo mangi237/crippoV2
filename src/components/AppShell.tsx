@@ -258,7 +258,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="flex flex-col gap-1.5 px-3 py-2.5 bg-surface-container-low border border-outline-variant/30 rounded-xl">
               <div className="flex items-center justify-between">
-                <span className="font-label-xs uppercase text-on-surface-variant">CAMPAY ESCROW</span>
+                <span className="font-label-xs uppercase text-on-surface-variant">FAPSHI ESCROW</span>
                 <span className="font-ticker-val text-on-tertiary-container">XAF</span>
               </div>
               <div className="flex items-center justify-between">

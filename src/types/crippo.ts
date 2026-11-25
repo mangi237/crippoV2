@@ -206,7 +206,7 @@ export interface Payment {
     | 'WALLET_WITHDRAWAL';
   reference: string;
   amountXAF: number;
-  provider: MomoProvider | 'CARD' | 'WALLET' | 'CAMPAY';
+  provider: MomoProvider | 'CARD' | 'WALLET' | 'FAPSHI' | 'CAMPAY';
   status: 'PENDING' | 'SUCCESSFUL' | 'FAILED';
   raceId?: string;
   memoId?: string;
@@ -368,10 +368,10 @@ export interface AffiliationRequest {
 export interface IntegrationStatus {
   firebaseConfigured: boolean;
   geminiConfigured: boolean;
-  campayConfigured: boolean;
-  campayEnv: string;
   fapshiConfigured?: boolean;
   fapshiEnv?: string;
+  campayConfigured?: boolean;
+  campayEnv?: string;
   youtubeConfigured: boolean;
   apifyConfigured: boolean;
   spotifyConfigured: boolean;

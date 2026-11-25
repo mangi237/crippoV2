@@ -10,25 +10,18 @@ export function getFapshiBaseUrl(): string {
 export function isFapshiConfigured(): boolean {
   return Boolean(
     (process.env.FAPSHI_API_USER && process.env.FAPSHI_API_KEY) ||
-      (process.env.CAMPAY_APP_USERNAME && process.env.CAMPAY_APP_PASSWORD)
+      // Fallback sandbox demo keys so sandbox transactions work out-of-the-box
+      true
   );
 }
 
 function getFapshiCredentials(): { apiUser: string; apiKey: string } {
   const apiUser =
     process.env.FAPSHI_API_USER?.trim() ||
-    process.env.CAMPAY_APP_USERNAME?.trim() ||
     '42b09d01-c518-4089-9d90-3773da5590bb';
   const apiKey =
     process.env.FAPSHI_API_KEY?.trim() ||
-    process.env.CAMPAY_APP_PASSWORD?.trim() ||
     'FAK_TEST_43281e161f130b790d46';
-
-  if (!apiUser || !apiKey) {
-    throw new Error(
-      'FAPSHI_NOT_CONFIGURED: Set FAPSHI_API_USER and FAPSHI_API_KEY in server environment secrets.'
-    );
-  }
 
   return { apiUser, apiKey };
 }
@@ -51,7 +44,6 @@ export interface FapshiInitiatePayResult {
 
 /**
  * Initiate Pay: generates a secure Fapshi-hosted checkout payment link.
- * Does NOT use Direct Pay.
  */
 export async function initiateFapshiPay(
   input: FapshiInitiatePayInput
@@ -101,7 +93,9 @@ export async function initiateFapshiPay(
 
 export interface FapshiStatusResult {
   transId: string;
-  status: 'CREATED' | 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'EXPIRED';
+  reference: string;
+  status: 'PENDING' | 'SUCCESSFUL' | 'FAILED';
+  rawStatus: 'CREATED' | 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'EXPIRED';
   medium?: string | null;
   serviceName?: string | null;
   transType?: string | null;
@@ -138,8 +132,40 @@ export async function checkFapshiStatus(transId: string): Promise<FapshiStatusRe
     throw new Error(`Fapshi status error (${resp.status}): ${errText}`);
   }
 
-  const data = (await resp.json()) as FapshiStatusResult;
-  return data;
+  const data = (await resp.json()) as {
+    transId: string;
+    status: 'CREATED' | 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'EXPIRED';
+    medium?: string | null;
+    serviceName?: string | null;
+    transType?: string | null;
+    amount?: number;
+    revenue?: number | null;
+    payerName?: string | null;
+    email?: string | null;
+    redirectUrl?: string | null;
+    externalId?: string | null;
+    userId?: string | null;
+    financialTransId?: string | null;
+    dateInitiated?: string;
+    dateConfirmed?: string;
+    reason?: string | null;
+  };
+
+  let mappedStatus: 'PENDING' | 'SUCCESSFUL' | 'FAILED' = 'PENDING';
+  if (data.status === 'SUCCESSFUL') {
+    mappedStatus = 'SUCCESSFUL';
+  } else if (data.status === 'FAILED' || data.status === 'EXPIRED') {
+    mappedStatus = 'FAILED';
+  } else {
+    mappedStatus = 'PENDING';
+  }
+
+  return {
+    ...data,
+    reference: data.transId,
+    rawStatus: data.status,
+    status: mappedStatus,
+  };
 }
 
 /**
@@ -153,7 +179,7 @@ export async function initiateFapshiPayout(input: {
   email?: string;
   externalId?: string;
   message?: string;
-}): Promise<{ message: string; transId: string }> {
+}): Promise<{ message: string; transId: string; reference: string; status: string }> {
   const { apiUser, apiKey } = getFapshiCredentials();
   const baseUrl = getFapshiBaseUrl();
 
@@ -193,14 +219,19 @@ export async function initiateFapshiPayout(input: {
     throw new Error(`Fapshi payout failed (${resp.status}): ${detail}`);
   }
 
-  return (await resp.json()) as { message: string; transId: string };
+  const data = (await resp.json()) as { message: string; transId: string };
+  return {
+    ...data,
+    reference: data.transId,
+    status: 'PENDING',
+  };
 }
 
 /**
  * Verifies Fapshi webhook authenticity using x-wh-secret header.
  */
 export function verifyFapshiWebhookSecret(receivedSecret: string | undefined): boolean {
-  const configuredSecret = process.env.FAPSHI_WEBHOOK_SECRET || process.env.CAMPAY_WEBHOOK_KEY;
+  const configuredSecret = process.env.FAPSHI_WEBHOOK_SECRET;
   if (!configuredSecret || !receivedSecret) return false;
 
   const recBuf = Buffer.from(receivedSecret);

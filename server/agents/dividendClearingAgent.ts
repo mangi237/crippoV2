@@ -1,6 +1,6 @@
 import { Type } from '@google/genai';
 import { getGeminiClient, CRIPPO_GEMINI_MODEL } from '../lib/gemini';
-import { initiateCamPayWithdraw, isCamPayConfigured } from '../payments/campay';
+import { initiateFapshiPayout, isFapshiConfigured } from '../payments/fapshi';
 
 export interface DividendHolderInput {
   uid: string;
@@ -18,7 +18,7 @@ export interface DividendClearingInput {
   revSharePct: number;
   totalShares: number;
   holders: DividendHolderInput[];
-  dispatchCamPay?: boolean;
+  dispatchPayout?: boolean;
 }
 
 export interface ShareholderAllocation {
@@ -40,7 +40,7 @@ export interface DividendClearingResult {
   creatorNetRetainedXAF: number;
   allocations: ShareholderAllocation[];
   clearingNote: string;
-  campayDispatchedCount: number;
+  payoutDispatchedCount: number;
 }
 
 const FX_TO_XAF: Record<'USD' | 'EUR' | 'XAF', number> = {
@@ -90,8 +90,8 @@ Produce a crisp 2-sentence institutional clearing note summarizing this FX conve
   const parsed = JSON.parse((response.text || '{}').trim()) as { clearingNote?: string };
 
   const allocations: ShareholderAllocation[] = [];
-  let campayDispatchedCount = 0;
-  const canWithdraw = Boolean(input.dispatchCamPay && isCamPayConfigured());
+  let payoutDispatchedCount = 0;
+  const canWithdraw = Boolean(input.dispatchPayout && isFapshiConfigured());
 
   for (const holder of input.holders) {
     if (holder.sharesHeld <= 0) continue;
@@ -105,17 +105,17 @@ Produce a crisp 2-sentence institutional clearing note summarizing this FX conve
 
     if (canWithdraw && payoutAmountXAF >= 100 && holder.momoPhone && /^2376\d{8}$/.test(holder.momoPhone)) {
       try {
-        const res = await initiateCamPayWithdraw({
-          amountXAF: payoutAmountXAF,
+        const res = await initiateFapshiPayout({
+          amount: payoutAmountXAF,
           phone: holder.momoPhone,
-          description: `Crippo Royalty: ${input.raceTitle} (${input.periodLabel})`,
-          externalReference: `div_${input.raceId}_${holder.uid.slice(0, 8)}_${Date.now()}`,
+          message: `Crippo Royalty: ${input.raceTitle} (${input.periodLabel})`,
+          externalId: `div_${input.raceId}_${holder.uid.slice(0, 8)}_${Date.now()}`,
         });
         momoReference = res.reference;
         disbursementStatus = 'disbursed';
-        campayDispatchedCount++;
+        payoutDispatchedCount++;
       } catch (err) {
-        error = err instanceof Error ? err.message : 'CamPay withdraw failed';
+        error = err instanceof Error ? err.message : 'Fapshi payout failed';
       }
     }
 
@@ -143,6 +143,6 @@ Produce a crisp 2-sentence institutional clearing note summarizing this FX conve
         parsed.clearingNote ||
           `Cleared ${investorPoolXAF.toLocaleString()} XAF (${input.revSharePct}%) to ${allocations.length} holders.`
       ).slice(0, 400),
-    campayDispatchedCount,
+    payoutDispatchedCount,
   };
 }

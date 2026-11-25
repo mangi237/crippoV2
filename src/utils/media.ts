@@ -71,7 +71,7 @@ export function getRaceTimelineStage(race: Race, lang: 'en' | 'fr' = 'en'): Time
       countdownLabel: formatTimeRemaining(new Date(roiEndMs).toISOString(), lang),
       nextMilestoneTitle: race.isrcCode
         ? `ISRC ${race.isrcCode} Streaming Waterfall`
-        : 'Monthly CamPay Dividend Split',
+        : 'Monthly Fapshi Dividend Split',
       trancheStatus: '100% Released · Live ROI',
     };
   }

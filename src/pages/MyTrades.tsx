@@ -155,7 +155,7 @@ export function MyTrades() {
       {/* Node Status Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/25 pb-3">
         <span className="font-label-md text-on-surface uppercase tracking-wider">
-          {profile?.anonymousId || 'Trader'} · CamPay Settlement Active
+          {profile?.anonymousId || 'Trader'} · Fapshi Settlement Active
         </span>
         <button
           type="button"
@@ -282,9 +282,9 @@ export function MyTrades() {
             )}
           </div>
 
-          {/* CamPay Payments Ledger */}
+          {/* Fapshi Payments Ledger */}
           <div className="flex flex-col gap-3">
-            <h3 className="font-headline-sm text-on-surface font-bold">CamPay Settlement Ledger</h3>
+            <h3 className="font-headline-sm text-on-surface font-bold">Fapshi Settlement Ledger</h3>
             {myPayments.length === 0 ? (
               <p className="font-body-sm text-on-surface-variant py-6">
                 No Mobile Money settlement transactions recorded yet.

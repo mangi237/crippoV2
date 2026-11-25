@@ -350,7 +350,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         }
         showToast(
           'Raise Live on Market!',
-          'Share split accepted. Fans can now buy and trade shares via CamPay Mobile Money.'
+          'Share split accepted. Fans can now buy and trade shares via Fapshi Mobile Money.'
         );
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `races/${raceId}`);

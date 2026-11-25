@@ -244,7 +244,7 @@ service cloud.firestore {
       data.type in ['SHARE_PURCHASE', 'MEMO_FEE', 'BRAND_ESCROW', 'ROYALTY_DISBURSEMENT', 'WALLET_DEPOSIT', 'WALLET_WITHDRAWAL'] &&
       data.reference is string && data.reference.size() >= 3 && data.reference.size() <= 128 &&
       data.amountXAF is number && data.amountXAF > 0 &&
-      data.provider in ['MTN', 'ORANGE', 'OTHER', 'CARD', 'WALLET', 'CAMPAY'] &&
+      data.provider in ['MTN', 'ORANGE', 'OTHER', 'CARD', 'WALLET', 'FAPSHI', 'CAMPAY'] &&
       data.status in ['PENDING', 'SUCCESSFUL', 'FAILED'] &&
       (!('raceId' in data) || (data.raceId is string && data.raceId.size() <= 128)) &&
       (!('memoId' in data) || (data.memoId is string && data.memoId.size() <= 128)) &&

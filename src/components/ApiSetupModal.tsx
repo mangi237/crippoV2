@@ -17,8 +17,8 @@ export function ApiSetupModal({ onClose }: ApiSetupModalProps) {
 
   const items = [
     {
-      name: 'Fapshi Payments (MTN MoMo & Orange XAF Sandbox)',
-      ready: Boolean(status?.fapshiConfigured || status?.campayConfigured),
+      name: 'Fapshi Payments (MTN MoMo, Orange & Cards)',
+      ready: Boolean(status?.fapshiConfigured),
       envVars: 'FAPSHI_API_USER, FAPSHI_API_KEY, FAPSHI_ENV=sandbox',
       note: 'Configured with Initiate Pay (hosted checkout session) in Sandbox environment.',
     },

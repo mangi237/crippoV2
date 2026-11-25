@@ -4,13 +4,12 @@ import fs from 'fs';
 import bundledFirebaseConfig from '../firebase-applet-config.json';
 import { requireAuth, type AuthenticatedRequest } from './lib/auth';
 import {
-  isCamPayConfigured,
-  initiateCamPayCollect,
-  initiateCamPayPaymentLink,
-  checkCamPayStatus,
-  initiateCamPayWithdraw,
-  verifyCamPayWebhookSignature,
-} from './payments/campay';
+  isFapshiConfigured,
+  initiateFapshiPay,
+  checkFapshiStatus,
+  initiateFapshiPayout,
+  verifyFapshiWebhookSecret,
+} from './payments/fapshi';
 import { underwriteRace, UnderwriteValidationError } from './agents/underwriterAgent';
 import { runCulturalPulsePipeline } from './agents/culturalPulseAgent';
 import { auditCreatorMemo } from './agents/memoAuditAgent';
@@ -23,7 +22,7 @@ import { fetchRealCreatorsFromAPIs } from './scrapers/seedCreators';
 export function createApiApp(): express.Express {
   const app = express();
 
-  // Capture raw body for CamPay webhook signature verification
+  // Capture raw body for webhook verification
   app.use(
     express.json({
       limit: '2mb',
@@ -41,9 +40,8 @@ export function createApiApp(): express.Express {
     const geminiConfigured = Boolean(
       process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'
     );
-    const campayConfigured = isCamPayConfigured();
-    const fapshiConfigured = campayConfigured;
-    const fapshiEnv = (process.env.FAPSHI_ENV || process.env.CAMPAY_ENV || 'sandbox').toLowerCase();
+    const fapshiConfigured = isFapshiConfigured();
+    const fapshiEnv = (process.env.FAPSHI_ENV || 'sandbox').toLowerCase();
     const youtubeConfigured = Boolean(process.env.YOUTUBE_API_KEY);
     const apifyConfigured = Boolean(process.env.APIFY_API_TOKEN);
     const spotifyConfigured = Boolean(
@@ -54,8 +52,6 @@ export function createApiApp(): express.Express {
     res.json({
       firebaseConfigured,
       geminiConfigured,
-      campayConfigured,
-      campayEnv: fapshiEnv,
       fapshiConfigured,
       fapshiEnv,
       youtubeConfigured,
@@ -107,42 +103,21 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // Auto-cached Live Cultural Feed Sync (Public read-through cache for Home Feed)
-  let cachedPulse: { catalysts: unknown[]; actorUsed: string; cachedAt: number } | null = null;
-  app.get('/api/feed/pulse', async (_req, res) => {
-    try {
-      const now = Date.now();
-      if (cachedPulse && now - cachedPulse.cachedAt < 10 * 60 * 1000 && cachedPulse.catalysts.length > 0) {
-        res.json({ ...cachedPulse, fromCache: true });
-        return;
-      }
-      const result = await runCulturalPulsePipeline(['Cameroon Music', 'Douala Creators', 'Afropop']);
-      if (result.catalysts.length > 0) {
-        cachedPulse = {
-          catalysts: result.catalysts,
-          actorUsed: result.actorUsed,
-          cachedAt: now,
-        };
-      }
-      res.json({
-        catalysts: result.catalysts,
-        actorUsed: result.actorUsed,
-        cachedAt: now,
-        fromCache: false,
-      });
-    } catch {
-      res.json({
-        catalysts: cachedPulse?.catalysts || [],
-        actorUsed: cachedPulse?.actorUsed || 'none',
-        cachedAt: Date.now(),
-        fromCache: true,
-      });
-    }
-  });
-
-  // Unified Cultural Pulse & Disadvantage Agent (Protected)
+  // Cultural Pulse Agent (Protected)
+  let cachedPulse: { catalysts: unknown[]; actorUsed?: string; cachedAt: number } | null = null;
   app.post('/api/agents/cultural-pulse', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const forceRefresh = Boolean(req.body?.forceRefresh);
+      if (!forceRefresh && cachedPulse && Date.now() - cachedPulse.cachedAt < 10 * 60 * 1000) {
+        res.json({
+          catalysts: cachedPulse.catalysts,
+          missingKeys: [],
+          actorUsed: cachedPulse.actorUsed,
+          cached: true,
+        });
+        return;
+      }
+
       const entityNames = Array.isArray(req.body?.entityNames)
         ? req.body.entityNames.map((n: unknown) => String(n)).slice(0, 20)
         : [];
@@ -278,7 +253,7 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // Automated Dividend Clearing & CamPay Withdrawal Agent (Protected)
+  // Automated Dividend Clearing Agent (Protected)
   app.post('/api/agents/dividend-clearing', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const body = req.body || {};
@@ -295,7 +270,7 @@ export function createApiApp(): express.Express {
         revSharePct: Number(body.revSharePct || 25),
         totalShares: Number(body.totalShares || 1),
         holders: Array.isArray(body.holders) ? body.holders : [],
-        dispatchCamPay: Boolean(body.dispatchCamPay),
+        dispatchPayout: Boolean(body.dispatchPayout ?? body.dispatchCamPay),
       });
       res.json(result);
     } catch (err) {
@@ -365,197 +340,123 @@ export function createApiApp(): express.Express {
     }
   });
 
-  // CamPay / Fapshi Mobile Money Collection (Initiate Pay / Hosted Checkout) (Protected)
-  app.post('/api/payments/campay/collect', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      if (!isCamPayConfigured()) {
-        res.status(424).json({
-          error: 'Fapshi/CamPay credentials are not configured on the server.',
-          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
-        });
-        return;
-      }
+  // Fapshi Mobile Money & Card Payment Link / Collect (Protected)
+  // Handles both /api/payments/fapshi/collect and legacy /api/payments/campay/collect
+  app.post(
+    ['/api/payments/fapshi/collect', '/api/payments/campay/collect', '/api/payments/fapshi/payment-link', '/api/payments/campay/payment-link'],
+    requireAuth,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const { amountXAF, phone, description, externalReference, email, redirectUrl } = req.body || {};
+        const amount = Number(amountXAF);
+        const cleanPhone = String(phone || '').replace(/\D/g, '');
 
-      const { amountXAF, phone, description, externalReference, email, redirectUrl } = req.body || {};
-      const amount = Number(amountXAF);
-      const cleanPhone = String(phone || '').replace(/\D/g, '');
-
-      if (!Number.isFinite(amount) || amount < 100) {
-        res.status(400).json({ error: 'Minimum transaction amount is 100 XAF.' });
-        return;
-      }
-
-      const fallbackOrigin = process.env.APP_URL || 'https://crippomarket.vercel.app';
-      let safeRedirect = fallbackOrigin;
-      if (typeof redirectUrl === 'string' && redirectUrl.trim()) {
-        try {
-          const parsed = new URL(redirectUrl.trim());
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            safeRedirect = parsed.toString();
-          }
-        } catch {
-          safeRedirect = fallbackOrigin;
+        if (!Number.isFinite(amount) || amount < 100) {
+          res.status(400).json({ error: 'Minimum transaction amount is 100 XAF.' });
+          return;
         }
-      }
 
-      const result = await initiateCamPayCollect({
-        amountXAF: amount,
-        phone: cleanPhone,
-        description: String(description || 'Crippo XAF Order'),
-        externalReference: String(externalReference || `crippo_${Date.now()}`),
-        email: typeof email === 'string' && email.trim() ? email.trim() : req.firebaseUser?.email,
-        userId: req.firebaseUser?.uid,
-        redirectUrl: safeRedirect,
-      });
-
-      res.json(result);
-    } catch (err) {
-      res.status(502).json({
-        error: err instanceof Error ? err.message : 'Payment collection request failed.',
-      });
-    }
-  });
-
-  // CamPay / Fapshi Hosted Payment Link (Protected)
-  app.post('/api/payments/campay/payment-link', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      if (!isCamPayConfigured()) {
-        res.status(424).json({
-          error: 'Fapshi/CamPay credentials are not configured on the server.',
-          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
-        });
-        return;
-      }
-
-      const {
-        amountXAF,
-        phone,
-        description,
-        externalReference,
-        redirectUrl,
-        paymentOptions,
-        firstName,
-        lastName,
-        email,
-      } = req.body || {};
-
-      const amount = Number(amountXAF);
-      if (!Number.isFinite(amount) || amount < 100) {
-        res.status(400).json({ error: 'Minimum transaction amount is 100 XAF.' });
-        return;
-      }
-
-      const fallbackOrigin = process.env.APP_URL || 'https://crippomarket.vercel.app';
-      let safeRedirect = fallbackOrigin;
-      if (typeof redirectUrl === 'string' && redirectUrl.trim()) {
-        try {
-          const parsed = new URL(redirectUrl.trim());
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            safeRedirect = parsed.toString();
+        const fallbackOrigin = process.env.APP_URL || 'https://crippomarket.vercel.app';
+        let safeRedirect = fallbackOrigin;
+        if (typeof redirectUrl === 'string' && redirectUrl.trim()) {
+          try {
+            const parsed = new URL(redirectUrl.trim());
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+              safeRedirect = parsed.toString();
+            }
+          } catch {
+            safeRedirect = fallbackOrigin;
           }
-        } catch {
-          safeRedirect = fallbackOrigin;
         }
-      }
 
-      const allowedOpts =
-        paymentOptions === 'CARD' || paymentOptions === 'MOMO' ? paymentOptions : 'MOMO,CARD';
-
-      const result = await initiateCamPayPaymentLink({
-        amountXAF: amount,
-        phone: typeof phone === 'string' ? phone : undefined,
-        description: String(description || 'Crippo Deposit'),
-        externalReference: String(externalReference || `crippo_link_${Date.now()}`),
-        redirectUrl: safeRedirect,
-        failureRedirectUrl: safeRedirect,
-        firstName: typeof firstName === 'string' ? firstName : undefined,
-        lastName: typeof lastName === 'string' ? lastName : undefined,
-        email: typeof email === 'string' ? email : req.firebaseUser?.email,
-        paymentOptions: allowedOpts,
-      });
-
-      res.json(result);
-    } catch (err) {
-      res.status(502).json({
-        error: err instanceof Error ? err.message : 'CamPay payment link generation failed.',
-      });
-    }
-  });
-
-  // CamPay / Fapshi Transaction Status Polling (Protected)
-  app.get('/api/payments/campay/status/:reference', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      if (!isCamPayConfigured()) {
-        res.status(424).json({
-          error: 'Fapshi/CamPay credentials are not configured on the server.',
-          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
+        const result = await initiateFapshiPay({
+          amount,
+          email: typeof email === 'string' && email.trim() ? email.trim() : req.firebaseUser?.email,
+          userId: req.firebaseUser?.uid,
+          externalId: String(externalReference || `crippo_${Date.now()}`),
+          redirectUrl: safeRedirect,
+          message: String(description || 'Crippo Order'),
         });
-        return;
-      }
-      const reference = String(req.params.reference || '');
-      if (!reference) {
-        res.status(400).json({ error: 'Transaction reference is required.' });
-        return;
-      }
-      const status = await checkCamPayStatus(reference);
-      res.json(status);
-    } catch (err) {
-      res.status(502).json({
-        error: err instanceof Error ? err.message : 'CamPay status check failed.',
-      });
-    }
-  });
 
-  // CamPay / Fapshi Disbursement / Payout (Protected)
-  app.post('/api/payments/campay/withdraw', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      if (!isCamPayConfigured()) {
-        res.status(424).json({
-          error: 'Fapshi/CamPay credentials are not configured on the server.',
-          missingKeys: ['FAPSHI_API_USER', 'FAPSHI_API_KEY'],
+        res.json({
+          reference: result.transId,
+          transId: result.transId,
+          link: result.link,
+          status: 'CREATED',
         });
-        return;
+      } catch (err) {
+        res.status(502).json({
+          error: err instanceof Error ? err.message : 'Fapshi payment collection request failed.',
+        });
       }
-      const { amountXAF, phone, description, externalReference } = req.body || {};
-      const amount = Number(amountXAF);
-      const cleanPhone = String(phone || '').replace(/\D/g, '');
-      if (!Number.isFinite(amount) || amount < 100) {
-        res.status(400).json({ error: 'Invalid disbursement amount.' });
-        return;
-      }
-      if (!/^2376[0-9]{8}$/.test(cleanPhone)) {
-        res.status(400).json({ error: 'Valid recipient phone required (2376XXXXXXXX).' });
-        return;
-      }
-      const result = await initiateCamPayWithdraw({
-        amountXAF: amount,
-        phone: cleanPhone,
-        description: String(description || 'Crippo Royalty Payout'),
-        externalReference: String(externalReference || `payout_${Date.now()}`),
-      });
-      res.json(result);
-    } catch (err) {
-      res.status(502).json({
-        error: err instanceof Error ? err.message : 'CamPay disbursement failed.',
-      });
     }
-  });
+  );
 
-  // Fapshi / CamPay Webhook Receiver
-  app.post(['/api/payments/campay/webhook', '/api/payments/fapshi/webhook'], (req, res) => {
-    const rawBody = (req as express.Request & { rawBody?: string }).rawBody || JSON.stringify(req.body || {});
-    const sigHeader =
-      req.header('x-wh-secret') ||
-      req.header('X-CamPay-Signature') ||
-      req.header('x-campay-signature');
+  // Fapshi Transaction Status Polling (Protected)
+  // Supports both /api/payments/fapshi/status/:reference and /api/payments/campay/status/:reference
+  app.get(
+    ['/api/payments/fapshi/status/:reference', '/api/payments/campay/status/:reference'],
+    requireAuth,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const reference = String(req.params.reference || '');
+        if (!reference) {
+          res.status(400).json({ error: 'Transaction reference is required.' });
+          return;
+        }
+        const status = await checkFapshiStatus(reference);
+        res.json(status);
+      } catch (err) {
+        res.status(502).json({
+          error: err instanceof Error ? err.message : 'Payment status check failed.',
+        });
+      }
+    }
+  );
 
-    const configuredSecret = process.env.FAPSHI_WEBHOOK_SECRET || process.env.CAMPAY_WEBHOOK_KEY;
-    if (configuredSecret && !verifyCamPayWebhookSignature(rawBody, sigHeader)) {
-      res.status(401).json({ error: 'Invalid webhook signature or secret.' });
+  // Fapshi Disbursement / Payout (Protected)
+  app.post(
+    ['/api/payments/fapshi/withdraw', '/api/payments/campay/withdraw'],
+    requireAuth,
+    async (req: AuthenticatedRequest, res) => {
+      try {
+        const { amountXAF, phone, description, externalReference } = req.body || {};
+        const amount = Number(amountXAF);
+        const cleanPhone = String(phone || '').replace(/\D/g, '');
+        if (!Number.isFinite(amount) || amount < 100) {
+          res.status(400).json({ error: 'Invalid disbursement amount.' });
+          return;
+        }
+        if (!/^2376[0-9]{8}$/.test(cleanPhone)) {
+          res.status(400).json({ error: 'Valid recipient phone required (2376XXXXXXXX).' });
+          return;
+        }
+        const result = await initiateFapshiPayout({
+          amount,
+          phone: cleanPhone,
+          message: String(description || 'Crippo Royalty Payout'),
+          externalId: String(externalReference || `payout_${Date.now()}`),
+        });
+        res.json(result);
+      } catch (err) {
+        res.status(502).json({
+          error: err instanceof Error ? err.message : 'Fapshi disbursement failed.',
+        });
+      }
+    }
+  );
+
+  // Fapshi Webhook Receiver
+  app.post(['/api/payments/fapshi/webhook', '/api/payments/campay/webhook'], (req, res) => {
+    const sigHeader = req.header('x-wh-secret');
+    const configuredSecret = process.env.FAPSHI_WEBHOOK_SECRET;
+
+    if (configuredSecret && !verifyFapshiWebhookSecret(sigHeader)) {
+      res.status(401).json({ error: 'Invalid webhook secret.' });
       return;
     }
 
-    res.status(200).json({ received: true, reference: req.body?.transId || req.body?.reference || null });
+    res.status(200).json({ received: true, reference: req.body?.transId || null });
   });
 
   return app;

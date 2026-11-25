@@ -84,7 +84,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
   const [affMessage, setAffMessage] = useState('');
   const [sendingAff, setSendingAff] = useState(false);
 
-  // Paid Memo States (Submitted to Admin ONLY after CamPay settlement)
+  // Paid Memo States (Submitted to Admin ONLY after Fapshi settlement)
   const [memoTier, setMemoTier] = useState<'fan_2000' | 'fast_track_5000'>('fast_track_5000');
   const [memoFullName, setMemoFullName] = useState(profile?.displayName || '');
   const [memoStageName, setMemoStageName] = useState('');
@@ -501,15 +501,16 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
     const paymentId = `pay_memo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     try {
-      const resp = await apiFetch<{ reference: string; ussd_code?: string }>(
-        '/api/payments/campay/collect',
+      const resp = await apiFetch<{ reference: string; ussd_code?: string; link?: string }>(
+        '/api/payments/fapshi/collect',
         {
           method: 'POST',
           body: JSON.stringify({
             amountXAF: feeXAF,
             phone: cleanPhone,
-            description: `Crippo Creator Memo to 672638094 (${stageName.trim()})`,
+            description: `Crippo Creator Memo (${stageName.trim()})`,
             externalReference: paymentId,
+            redirectUrl: window.location.href,
           }),
         }
       );
@@ -520,16 +521,20 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
         type: 'MEMO_FEE',
         reference: resp.reference,
         amountXAF: feeXAF,
-        provider: 'CAMPAY',
+        provider: 'FAPSHI',
         status: 'PENDING',
         memoId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
+      if (resp.link) {
+        window.open(resp.link, '_blank');
+      }
+
       showToast(
-        'Confirm USSD to 672638094',
-        `Authorize ${feeXAF.toLocaleString()} XAF (${resp.ussd_code || '*126#'}). Application submits after confirmation.`,
+        'Authorize Payment',
+        `Complete Fapshi checkout (${feeXAF.toLocaleString()} XAF). Application submits after confirmation.`,
         'info'
       );
 
@@ -537,16 +542,16 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
       for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2500));
         const check = await apiFetch<{ status: string }>(
-          `/api/payments/campay/status/${encodeURIComponent(resp.reference)}`
+          `/api/payments/fapshi/status/${encodeURIComponent(resp.reference)}`
         );
         if (check.status === 'SUCCESSFUL') {
           settled = true;
           break;
         }
-        if (check.status === 'FAILED') throw new Error('CamPay payment declined. Memo application was not submitted.');
+        if (check.status === 'FAILED') throw new Error('Payment declined. Memo application was not submitted.');
       }
       if (!settled) {
-        throw new Error('CamPay USSD timed out. Complete payment to submit your Creator Memo.');
+        throw new Error('Payment timed out. Complete payment to submit your Creator Memo.');
       }
 
       await updateDoc(doc(db, 'payments', paymentId), {
@@ -566,7 +571,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
         }
       );
 
-      // Strictly create the memo ONLY AFTER CamPay confirms payment
+      // Strictly create the memo ONLY AFTER Fapshi confirms payment
       await setDoc(doc(db, 'memos', memoId), {
         id: memoId,
         requesterUid: user.uid,
@@ -1461,7 +1466,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
               <strong className="font-mono-num text-secondary">
                 {memoTier === 'fast_track_5000' ? '5,000 FCFA' : '2,000 FCFA'}
               </strong>{' '}
-              to <strong className="font-mono-num text-on-surface">672638094</strong> via CamPay USSD below. Unpaid drafts are never queued in the Admin Dashboard.
+              Send 2,000 FCFA securely via Fapshi below. Unpaid drafts are never queued in the Admin Dashboard.
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1539,7 +1544,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
               className="w-full py-3.5 rounded-xl bg-secondary text-white font-label-md font-bold uppercase tracking-wider disabled:opacity-60"
             >
               {memoBusy
-                ? 'Waiting for CamPay Confirmation...'
+                ? 'Waiting for Fapshi Confirmation...'
                 : `Pay ${memoTier === 'fast_track_5000' ? '5,000' : '2,000'} FCFA to 672638094 & Submit`}
             </button>
           </form>
@@ -1790,7 +1795,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
                 Unlisted Creator? Fast-Track Your Dossier
               </h3>
               <p className="font-body-sm text-on-surface-variant mt-0.5">
-                Send 5,000 FCFA to <strong className="font-mono-num text-on-surface">672638094</strong> via CamPay. Your dossier enters Admin review only after payment settles.
+                Send 5,000 FCFA securely via Fapshi. Your dossier enters Admin review only after payment settles.
               </p>
             </div>
 
@@ -1856,7 +1861,7 @@ export function CreatorProfile({ onOpenApiSetup }: CreatorProfileProps) {
               disabled={memoBusy}
               className="w-full py-3 rounded-xl bg-primary-container text-white font-label-md font-bold uppercase tracking-wider disabled:opacity-60"
             >
-              {memoBusy ? 'Waiting for CamPay...' : 'Pay 5,000 FCFA to 672638094 & Submit'}
+              {memoBusy ? 'Waiting for Fapshi...' : 'Pay 5,000 FCFA & Submit'}
             </button>
           </form>
         </div>

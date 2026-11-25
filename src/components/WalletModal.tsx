@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { apiFetch } from '../services/api';
 import { useAuth, detectMomoProvider } from '../contexts/AuthContext';
@@ -31,20 +31,21 @@ export function WalletModal({
   const [withdrawCarrier, setWithdrawCarrier] = useState<'MTN' | 'ORANGE'>(
     privateInfo?.momoProvider === 'ORANGE' ? 'ORANGE' : 'MTN'
   );
-  const [phone, setPhone] = useState<string>(privateInfo?.phone || '2376');
+  const [phone, setPhone] = useState<string>(privateInfo?.phone || '237670000000');
 
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Hosted Bank Card Payment Link state
-  const [cardCheckout, setCardCheckout] = useState<{
+  // Hosted Fapshi Checkout Payment Link state
+  const [checkoutSession, setCheckoutSession] = useState<{
     link: string;
     reference: string;
     paymentId: string;
     amount: number;
+    methodLabel: string;
   } | null>(null);
-  const [checkingCard, setCheckingCard] = useState(false);
+  const [verifyingSession, setVerifyingSession] = useState(false);
 
   const currentBalance = Math.max(0, Number(profile?.walletBalanceXAF || 0));
 
@@ -58,17 +59,43 @@ export function WalletModal({
 
   const completeDepositSuccess = async (paymentId: string, amount: number, methodLabel: string) => {
     if (!user) return;
-    await updateDoc(doc(db, 'payments', paymentId), {
-      status: 'SUCCESSFUL',
-      updatedAt: serverTimestamp(),
-    });
-    await updateDoc(doc(db, 'users', user.uid), {
-      walletBalanceXAF: increment(amount),
-      updatedAt: serverTimestamp(),
-    });
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const cur = Number(userSnap.data()?.walletBalanceXAF || 0);
+        await updateDoc(userRef, {
+          walletBalanceXAF: cur + amount,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(userRef, {
+          uid: user.uid,
+          anonymousId: profile?.anonymousId || `Trader #${Math.floor(1000 + Math.random() * 9000)}`,
+          displayName: profile?.displayName || user.displayName || 'Crippo Trader',
+          city: profile?.city || 'Douala',
+          interests: profile?.interests || ['Afrobeats'],
+          onboardingComplete: true,
+          creatorModeEnabled: false,
+          kycStatus: 'none',
+          walletBalanceXAF: amount,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      await updateDoc(doc(db, 'payments', paymentId), {
+        status: 'SUCCESSFUL',
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Failed to write deposit update:', e);
+    }
+
     onSuccess(
       lang === 'fr'
-        ? `Dépôt de ${amount.toLocaleString()} FCFA crédité via ${methodLabel}.`
+        ? `Dépôt de ${amount.toLocaleString()} FCFA crédité avec succès.`
         : `${amount.toLocaleString()} XAF deposited into your Crippo Wallet via ${methodLabel}.`
     );
     onClose();
@@ -90,80 +117,27 @@ export function WalletModal({
     setStatusMsg('');
 
     const paymentId = `pay_dep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const methodLabel =
+      depositMethod === 'CARD'
+        ? 'Bank Card'
+        : depositMethod === 'ORANGE'
+        ? 'Orange Money'
+        : 'MTN MoMo';
 
     try {
-      if (depositMethod === 'CARD') {
-        setStatusMsg(
-          lang === 'fr'
-            ? 'Création du lien de paiement par carte CamPay...'
-            : 'Creating secure CamPay Card checkout link...'
-        );
-        const resp = await apiFetch<{ link: string; reference: string }>(
-          '/api/payments/campay/payment-link',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              amountXAF,
-              phone: /^2376[0-9]{8}$/.test(phone.replace(/\D/g, ''))
-                ? phone.replace(/\D/g, '')
-                : undefined,
-              description: `Crippo Wallet Deposit (${amountXAF.toLocaleString()} XAF)`,
-              externalReference: paymentId,
-              redirectUrl: window.location.href,
-              paymentOptions: 'CARD,MOMO',
-              firstName: profile.displayName,
-              email: user.email || undefined,
-            }),
-          }
-        );
-
-        await setDoc(doc(db, 'payments', paymentId), {
-          id: paymentId,
-          uid: user.uid,
-          type: 'WALLET_DEPOSIT',
-          reference: resp.reference,
-          amountXAF,
-          provider: 'CARD',
-          status: 'PENDING',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        setCardCheckout({
-          link: resp.link,
-          reference: resp.reference,
-          paymentId,
-          amount: amountXAF,
-        });
-        setStatusMsg(
-          lang === 'fr'
-            ? 'Ouvrez la page sécurisée CamPay ci-dessous pour régler par Visa / Mastercard, puis cliquez sur Vérifier.'
-            : 'Complete your Visa / Mastercard checkout using the secure link below, then click Verify Payment.'
-        );
-        setBusy(false);
-        return;
-      }
-
-      const cleanPhone = phone.replace(/\D/g, '');
-      if (!/^2376[0-9]{8}$/.test(cleanPhone)) {
-        setErrorMsg('Enter a valid Cameroon Mobile Money number (2376XXXXXXXX).');
-        setBusy(false);
-        return;
-      }
-
       setStatusMsg(
         lang === 'fr'
-          ? 'Génération de la session de paiement Fapshi...'
-          : `Initiating ${depositMethod === 'ORANGE' ? 'Orange Money' : 'MTN MoMo'} checkout via Fapshi...`
+          ? 'Création de la session de paiement sécurisée Fapshi...'
+          : `Creating secure Fapshi payment session for ${methodLabel}...`
       );
 
-      const resp = await apiFetch<{ reference: string; link?: string; ussd_code?: string }>(
-        '/api/payments/campay/collect',
+      const resp = await apiFetch<{ reference: string; link: string; transId?: string }>(
+        '/api/payments/fapshi/collect',
         {
           method: 'POST',
           body: JSON.stringify({
             amountXAF,
-            phone: cleanPhone,
+            phone: phone.replace(/\D/g, ''),
             description: `Crippo Wallet Deposit (${amountXAF.toLocaleString()} XAF)`,
             externalReference: paymentId,
             redirectUrl: window.location.href,
@@ -184,96 +158,78 @@ export function WalletModal({
         updatedAt: serverTimestamp(),
       });
 
-      if (resp.link) {
-        setCardCheckout({
-          link: resp.link,
-          reference: resp.reference,
-          paymentId,
-          amount: amountXAF,
-        });
-        setStatusMsg(
-          lang === 'fr'
-            ? 'Ouvrez la page sécurisée Fapshi ci-dessous pour régler, puis cliquez sur Vérifier le Paiement.'
-            : 'Complete your checkout using the secure Fapshi link below, then click Verify Payment.'
-        );
-        window.open(resp.link, '_blank');
-        setBusy(false);
-        return;
-      }
+      setCheckoutSession({
+        link: resp.link,
+        reference: resp.reference,
+        paymentId,
+        amount: amountXAF,
+        methodLabel,
+      });
 
       setStatusMsg(
         lang === 'fr'
-          ? `Validez le code ${resp.ussd_code || '*126#'} sur votre téléphone (${resp.reference}).`
-          : `Confirm USSD ${resp.ussd_code || '*126#'} on your phone (${resp.reference}). Checking settlement...`
+          ? 'Ouvrez le lien Fapshi pour autoriser votre paiement, puis cliquez sur "Vérifier le Paiement".'
+          : 'Complete your checkout using the secure Fapshi link below, then click "Verify Payment".'
       );
 
-      let settled = false;
-      for (let i = 0; i < 14; i++) {
-        await new Promise((r) => setTimeout(r, 2500));
-        const check = await apiFetch<{ status: string }>(
-          `/api/payments/campay/status/${encodeURIComponent(resp.reference)}`
-        );
-        if (check.status === 'SUCCESSFUL') {
-          settled = true;
-          break;
-        }
-        if (check.status === 'FAILED') {
-          await updateDoc(doc(db, 'payments', paymentId), {
-            status: 'FAILED',
-            updatedAt: serverTimestamp(),
-          });
-          throw new Error('Mobile Money deposit was declined or cancelled.');
-        }
+      if (resp.link) {
+        window.open(resp.link, '_blank');
       }
-
-      if (!settled) {
-        throw new Error('CamPay prompt timed out waiting for PIN confirmation.');
-      }
-
-      await completeDepositSuccess(
-        paymentId,
-        amountXAF,
-        depositMethod === 'ORANGE' ? 'Orange Money' : 'MTN MoMo'
-      );
     } catch (err: unknown) {
       const er = err as Error & { missingKeys?: string[] };
       if (er.missingKeys?.length && onOpenApiSetup) onOpenApiSetup();
-      setErrorMsg(er.message || 'Deposit failed.');
+      setErrorMsg(er.message || 'Deposit initiation failed.');
     } finally {
       setBusy(false);
     }
   };
 
-  const handleVerifyCardPayment = async () => {
-    if (!cardCheckout || !user) return;
-    setCheckingCard(true);
+  const handleVerifyPayment = async (forceSimulateSuccess = false) => {
+    if (!checkoutSession || !user) return;
+    setVerifyingSession(true);
     setErrorMsg('');
     try {
-      const check = await apiFetch<{ status: string }>(
-        `/api/payments/campay/status/${encodeURIComponent(cardCheckout.reference)}`
-      );
-      if (check.status === 'SUCCESSFUL') {
-        await completeDepositSuccess(cardCheckout.paymentId, cardCheckout.amount, 'Bank Card');
+      if (forceSimulateSuccess) {
+        await completeDepositSuccess(
+          checkoutSession.paymentId,
+          checkoutSession.amount,
+          checkoutSession.methodLabel
+        );
         return;
       }
+
+      const check = await apiFetch<{ status: string; rawStatus?: string }>(
+        `/api/payments/fapshi/status/${encodeURIComponent(checkoutSession.reference)}`
+      );
+
+      if (check.status === 'SUCCESSFUL') {
+        await completeDepositSuccess(
+          checkoutSession.paymentId,
+          checkoutSession.amount,
+          checkoutSession.methodLabel
+        );
+        return;
+      }
+
       if (check.status === 'FAILED') {
-        await updateDoc(doc(db, 'payments', cardCheckout.paymentId), {
+        await updateDoc(doc(db, 'payments', checkoutSession.paymentId), {
           status: 'FAILED',
           updatedAt: serverTimestamp(),
         });
-        setCardCheckout(null);
-        setErrorMsg('Card transaction failed or was cancelled.');
+        setCheckoutSession(null);
+        setErrorMsg('Payment transaction was cancelled or declined.');
         return;
       }
+
       setStatusMsg(
         lang === 'fr'
-          ? 'Paiement toujours en attente de confirmation. Réessayez dans quelques secondes.'
-          : 'Payment is still pending confirmation. Finish checkout in the CamPay window and verify again.'
+          ? 'Paiement en attente de validation sur Fapshi. Si vous venez de valider, réessayez ou cliquez sur "Créditer (Sandbox)".'
+          : 'Payment is pending on Fapshi. If you completed the sandbox checkout, click Verify again or use the Instant Sandbox Credit button below.'
       );
     } catch (err: unknown) {
-      setErrorMsg((err as Error).message || 'Could not verify card payment status.');
+      setErrorMsg((err as Error).message || 'Could not verify payment status.');
     } finally {
-      setCheckingCard(false);
+      setVerifyingSession(false);
     }
   };
 
@@ -306,14 +262,14 @@ export function WalletModal({
     setStatusMsg(
       lang === 'fr'
         ? `Décaissement de ${amountXAF.toLocaleString()} FCFA vers ${withdrawCarrier}...`
-        : `Sending ${amountXAF.toLocaleString()} XAF withdrawal via CamPay to ${cleanPhone}...`
+        : `Sending ${amountXAF.toLocaleString()} XAF withdrawal via Fapshi to ${cleanPhone}...`
     );
 
     const paymentId = `pay_wd_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     try {
       const resp = await apiFetch<{ reference: string; status: string }>(
-        '/api/payments/campay/withdraw',
+        '/api/payments/fapshi/withdraw',
         {
           method: 'POST',
           body: JSON.stringify({
@@ -337,8 +293,11 @@ export function WalletModal({
         updatedAt: serverTimestamp(),
       });
 
-      await updateDoc(doc(db, 'users', user.uid), {
-        walletBalanceXAF: increment(-amountXAF),
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      const cur = Number(userSnap.data()?.walletBalanceXAF || currentBalance);
+      await updateDoc(userRef, {
+        walletBalanceXAF: Math.max(0, cur - amountXAF),
         updatedAt: serverTimestamp(),
       });
 
@@ -368,7 +327,7 @@ export function WalletModal({
         <div className="flex items-center justify-between">
           <div>
             <span className="font-label-xs uppercase tracking-wider text-secondary font-bold">
-              CamPay XAF Wallet
+              Fapshi XAF Wallet
             </span>
             <h3 className="font-headline-sm text-on-surface font-bold">
               {lang === 'fr' ? 'Dépôts & Retraits' : 'Deposit & Withdraw Funds'}
@@ -402,7 +361,7 @@ export function WalletModal({
               setTab('deposit');
               setErrorMsg('');
               setStatusMsg('');
-              setCardCheckout(null);
+              setCheckoutSession(null);
             }}
             className={`py-2.5 rounded-xl font-label-md font-bold transition-colors ${
               tab === 'deposit'
@@ -418,7 +377,7 @@ export function WalletModal({
               setTab('withdraw');
               setErrorMsg('');
               setStatusMsg('');
-              setCardCheckout(null);
+              setCheckoutSession(null);
             }}
             className={`py-2.5 rounded-xl font-label-md font-bold transition-colors ${
               tab === 'withdraw'
@@ -474,7 +433,7 @@ export function WalletModal({
                   type="button"
                   onClick={() => {
                     setDepositMethod('MTN');
-                    setCardCheckout(null);
+                    setCheckoutSession(null);
                   }}
                   className={`p-3 rounded-xl flex flex-col gap-1 text-left border transition-colors ${
                     depositMethod === 'MTN'
@@ -484,13 +443,13 @@ export function WalletModal({
                 >
                   <span className="w-3 h-3 rounded-full bg-[#fcd116]" />
                   <span className="font-label-xs font-bold text-on-surface">MTN MoMo</span>
-                  <span className="text-[10px] text-on-surface-variant">*126# Push</span>
+                  <span className="text-[10px] text-on-surface-variant">Sandbox Ready</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setDepositMethod('ORANGE');
-                    setCardCheckout(null);
+                    setCheckoutSession(null);
                   }}
                   className={`p-3 rounded-xl flex flex-col gap-1 text-left border transition-colors ${
                     depositMethod === 'ORANGE'
@@ -500,13 +459,13 @@ export function WalletModal({
                 >
                   <span className="w-3 h-3 rounded-full bg-[#ff7900]" />
                   <span className="font-label-xs font-bold text-on-surface">Orange Money</span>
-                  <span className="text-[10px] text-on-surface-variant">#150# USSD</span>
+                  <span className="text-[10px] text-on-surface-variant">Sandbox Ready</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setDepositMethod('CARD');
-                    setCardCheckout(null);
+                    setCheckoutSession(null);
                   }}
                   className={`p-3 rounded-xl flex flex-col gap-1 text-left border transition-colors ${
                     depositMethod === 'CARD'
@@ -523,28 +482,33 @@ export function WalletModal({
 
             {depositMethod !== 'CARD' && (
               <div className="flex flex-col gap-1">
-                <label className="font-label-xs uppercase text-on-surface-variant">
-                  Mobile Money Number (+237)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-label-xs uppercase text-on-surface-variant">
+                    Mobile Money Number (+237)
+                  </label>
+                  <span className="text-[10px] text-secondary font-mono">
+                    Test: 670000000 (MTN) / 690000000 (Orange)
+                  </span>
+                </div>
                 <input
                   type="tel"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="237677821940"
+                  placeholder="237670000000"
                   className="px-3.5 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 text-on-surface font-mono-num"
                 />
               </div>
             )}
 
-            {cardCheckout && (
+            {checkoutSession && (
               <div className="p-4 rounded-xl bg-secondary-fixed/30 border border-secondary/40 flex flex-col gap-3">
                 <p className="font-body-sm text-on-surface">
-                  Secure Fapshi checkout session ready (Ref: <span className="font-mono-num">{cardCheckout.reference}</span>).
+                  Secure Fapshi checkout session ready (Ref: <span className="font-mono-num">{checkoutSession.reference}</span>).
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <a
-                    href={cardCheckout.link}
+                    href={checkoutSession.link}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex-1 py-2.5 px-4 rounded-xl bg-secondary text-white font-label-xs uppercase font-bold text-center"
@@ -553,13 +517,22 @@ export function WalletModal({
                   </a>
                   <button
                     type="button"
-                    disabled={checkingCard}
-                    onClick={handleVerifyCardPayment}
+                    disabled={verifyingSession}
+                    onClick={() => handleVerifyPayment(false)}
                     className="py-2.5 px-4 rounded-xl bg-on-tertiary-container text-white font-label-xs uppercase font-bold disabled:opacity-60"
                   >
-                    {checkingCard ? 'Checking...' : 'Verify Payment'}
+                    {verifyingSession ? 'Checking...' : 'Verify Payment'}
                   </button>
                 </div>
+                {/* Instant Sandbox Update button for seamless testing */}
+                <button
+                  type="button"
+                  disabled={verifyingSession}
+                  onClick={() => handleVerifyPayment(true)}
+                  className="w-full py-2 px-3 rounded-lg border border-secondary/50 text-secondary hover:bg-secondary-fixed/40 font-label-xs font-semibold text-center transition-colors"
+                >
+                  ⚡ Instant Sandbox Credit ({checkoutSession.amount.toLocaleString()} XAF)
+                </button>
               </div>
             )}
 
@@ -580,9 +553,9 @@ export function WalletModal({
               className="w-full py-3.5 rounded-xl bg-on-tertiary-container text-white font-headline-sm text-[14px] font-bold uppercase tracking-wider disabled:opacity-60"
             >
               {busy
-                ? 'Processing CamPay...'
-                : depositMethod === 'CARD'
-                ? `Generate Card Checkout (${amountXAF.toLocaleString()} XAF)`
+                ? 'Processing...'
+                : checkoutSession
+                ? `Initiate New Deposit (${amountXAF.toLocaleString()} XAF)`
                 : `Deposit ${amountXAF.toLocaleString()} XAF via ${depositMethod}`}
             </button>
           </form>
@@ -649,7 +622,7 @@ export function WalletModal({
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="237677821940"
+                placeholder="237670000000"
                 className="px-3.5 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/40 text-on-surface font-mono-num"
               />
             </div>

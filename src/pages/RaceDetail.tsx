@@ -161,7 +161,7 @@ export function RaceDetail({ onOpenApiSetup }: RaceDetailProps) {
       : [
           {
             phase: 'Phase 01',
-            title: 'Capital Raise & CamPay Escrow Lock',
+            title: 'Capital Raise & Fapshi Escrow Lock',
             targetDate: race.raceCloseDate,
             status: race.tranche1Released ? 'completed' : 'active',
             escrowReleasePct: 0,
@@ -744,7 +744,7 @@ export function RaceDetail({ onOpenApiSetup }: RaceDetailProps) {
                     </span>
                   </div>
                   <div className="flex justify-between pt-1.5 border-t border-outline-variant/20">
-                    <span className="font-bold text-on-surface">Total via CamPay</span>
+                    <span className="font-bold text-on-surface">Total via Fapshi</span>
                     <span className="font-ticker-val text-[16px] text-on-surface font-bold">
                       {(buyShares * race.currentSharePriceXAF).toLocaleString()} XAF
                     </span>

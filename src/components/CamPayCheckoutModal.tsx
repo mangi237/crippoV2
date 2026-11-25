@@ -165,8 +165,8 @@ export function CamPayCheckoutModal({
     if (totalAmountXAF < 100) {
       setErrorMsg(
         lang === 'fr'
-          ? 'Montant minimum CamPay: 100 FCFA.'
-          : 'Minimum CamPay transaction amount is 100 FCFA.'
+          ? 'Montant minimum: 100 FCFA.'
+          : 'Minimum transaction amount is 100 FCFA.'
       );
       return;
     }
@@ -176,9 +176,9 @@ export function CamPayCheckoutModal({
 
     try {
       if (method === 'CARD') {
-        setStatusMsg('Generating secure CamPay Bank Card checkout...');
+        setStatusMsg('Generating secure Fapshi Bank Card checkout...');
         const resp = await apiFetch<{ link: string; reference: string }>(
-          '/api/payments/campay/payment-link',
+          '/api/payments/fapshi/collect',
           {
             method: 'POST',
             body: JSON.stringify({
@@ -186,7 +186,6 @@ export function CamPayCheckoutModal({
               description: `Crippo: ${race.title} (${shares} shares)`,
               externalReference: paymentId,
               redirectUrl: window.location.href,
-              paymentOptions: 'CARD,MOMO',
               firstName: profile.displayName,
               email: user.email || undefined,
             }),
@@ -207,7 +206,7 @@ export function CamPayCheckoutModal({
         });
 
         setCardLinkData({ link: resp.link, reference: resp.reference, paymentId });
-        setStatusMsg('Open the secure CamPay Card checkout link below, then click Verify Card Settlement.');
+        setStatusMsg('Open the secure Fapshi Card checkout link below, then click Verify Settlement.');
         setSubmitting(false);
         return;
       }
@@ -230,7 +229,7 @@ export function CamPayCheckoutModal({
       );
 
       const resp = await apiFetch<{ reference: string; link?: string; ussd_code?: string; operator?: string }>(
-        '/api/payments/campay/collect',
+        '/api/payments/fapshi/collect',
         {
           method: 'POST',
           body: JSON.stringify({
@@ -279,7 +278,7 @@ export function CamPayCheckoutModal({
       for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2500));
         const check = await apiFetch<{ status: string }>(
-          `/api/payments/campay/status/${encodeURIComponent(resp.reference)}`
+          `/api/payments/fapshi/status/${encodeURIComponent(resp.reference)}`
         );
         if (check.status === 'SUCCESSFUL') {
           settled = true;
@@ -296,7 +295,7 @@ export function CamPayCheckoutModal({
 
       if (!settled) {
         throw new Error(
-          'CamPay prompt timed out waiting for PIN confirmation. Check your MoMo notifications and try again.'
+          'Payment prompt timed out waiting for confirmation. Check your notifications and try again.'
         );
       }
 
@@ -321,7 +320,7 @@ export function CamPayCheckoutModal({
     setErrorMsg('');
     try {
       const check = await apiFetch<{ status: string }>(
-        `/api/payments/campay/status/${encodeURIComponent(cardLinkData.reference)}`
+        `/api/payments/fapshi/status/${encodeURIComponent(cardLinkData.reference)}`
       );
       if (check.status === 'SUCCESSFUL') {
         await updateDoc(doc(db, 'payments', cardLinkData.paymentId), {
@@ -340,7 +339,7 @@ export function CamPayCheckoutModal({
         setErrorMsg('Card transaction failed or was cancelled.');
         return;
       }
-      setStatusMsg('Still awaiting Card confirmation on CamPay...');
+      setStatusMsg('Still awaiting confirmation on Fapshi...');
     } catch (err: unknown) {
       setErrorMsg((err as Error).message || 'Verification failed.');
     } finally {

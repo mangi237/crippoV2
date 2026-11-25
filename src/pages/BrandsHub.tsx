@@ -117,8 +117,8 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
     const payId = `pay_brand_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     try {
-      const resp = await apiFetch<{ reference: string; ussd_code?: string }>(
-        '/api/payments/campay/collect',
+      const resp = await apiFetch<{ reference: string; ussd_code?: string; link?: string }>(
+        '/api/payments/fapshi/collect',
         {
           method: 'POST',
           body: JSON.stringify({
@@ -126,6 +126,7 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
             phone: cleanPhone,
             description: `Crippo Brand Escrow: ${title.trim()}`,
             externalReference: payId,
+            redirectUrl: window.location.href,
           }),
         }
       );
@@ -136,16 +137,20 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
         type: 'BRAND_ESCROW',
         reference: resp.reference,
         amountXAF: budgetXAF,
-        provider: 'CAMPAY',
+        provider: 'FAPSHI',
         status: 'PENDING',
         campaignId: campId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
+      if (resp.link) {
+        window.open(resp.link, '_blank');
+      }
+
       showToast(
         'Authorize Corporate Escrow',
-        `Confirm USSD ${resp.ussd_code || '*126#'} (${budgetXAF.toLocaleString()} XAF) on your phone...`,
+        `Complete Fapshi payment for ${budgetXAF.toLocaleString()} XAF...`,
         'info'
       );
 
@@ -153,15 +158,15 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
       for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 2500));
         const check = await apiFetch<{ status: string }>(
-          `/api/payments/campay/status/${encodeURIComponent(resp.reference)}`
+          `/api/payments/fapshi/status/${encodeURIComponent(resp.reference)}`
         );
         if (check.status === 'SUCCESSFUL') {
           settled = true;
           break;
         }
-        if (check.status === 'FAILED') throw new Error('CamPay payment declined.');
+        if (check.status === 'FAILED') throw new Error('Fapshi payment declined.');
       }
-      if (!settled) throw new Error('CamPay USSD timed out waiting for confirmation.');
+      if (!settled) throw new Error('Payment confirmation timed out.');
 
       await updateDoc(doc(db, 'payments', payId), {
         status: 'SUCCESSFUL',
@@ -189,7 +194,7 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
       setBrief('');
       showToast(
         'Corporate Escrow Bonded',
-        `${budgetXAF.toLocaleString()} XAF locked in CamPay escrow for creators.`
+        `${budgetXAF.toLocaleString()} XAF locked in Fapshi escrow for creators.`
       );
     } catch (err: unknown) {
       const er = err as Error & { missingKeys?: string[] };
@@ -244,7 +249,7 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
             {lang === 'fr' ? 'Partenariats & Gestion Labels' : 'Corporate Escrow & Roster Desk'}
           </span>
           <h1 className="font-headline-lg-mobile md:font-headline-lg text-on-surface mt-1 font-bold">
-            {hubTab === 'brands' ? 'Brand Deals & CamPay Escrow' : 'Creator & Label Hub'}
+            {hubTab === 'brands' ? 'Brand Deals & Fapshi Escrow' : 'Creator & Label Hub'}
           </h1>
         </div>
 
@@ -409,7 +414,7 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
             {brandEscrowPayments.length > 0 && (
               <div className="border-t border-outline-variant/25 pt-5 flex flex-col gap-3">
                 <h3 className="font-headline-sm text-on-surface font-bold">
-                  BEAC &amp; CamPay Corporate Clearing Log
+                  BEAC &amp; Fapshi Corporate Clearing Log
                 </h3>
                 <div className="divide-y divide-outline-variant/20">
                   {brandEscrowPayments.map((p) => (
@@ -438,7 +443,7 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
                 Corporate Escrow Builder
               </span>
               <h2 className="font-headline-sm text-on-surface mt-1 font-bold">
-                Bond Sponsorship via CamPay USSD
+                Bond Sponsorship via Fapshi
               </h2>
               <p className="font-body-sm text-on-surface-variant mt-0.5">
                 Lock campaign funds in escrow upfront; 8% protocol clearing fee applies upon creator delivery.
@@ -515,7 +520,7 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
               disabled={busy}
               className="w-full py-3.5 rounded-xl bg-on-tertiary-container text-white font-headline-sm text-[14px] font-bold uppercase tracking-wider disabled:opacity-60"
             >
-              {busy ? 'Settling CamPay...' : `Lock ${budgetXAF.toLocaleString()} XAF Escrow`}
+              {busy ? 'Settling Fapshi...' : `Lock ${budgetXAF.toLocaleString()} XAF Escrow`}
             </button>
           </form>
         </div>

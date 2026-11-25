@@ -175,7 +175,7 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
   const [milestones, setMilestones] = useState<RaceMilestone[]>([
     {
       phase: 'Phase 01',
-      title: 'Capital Raise Close & CamPay Escrow Lock',
+      title: 'Capital Raise Close & Fapshi Escrow Lock',
       targetDate: new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10),
       status: 'active',
       escrowReleasePct: 0,
@@ -542,7 +542,7 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
           </h1>
         </div>
         <span className="px-3.5 py-2 rounded-xl border border-outline-variant/40 font-label-xs uppercase text-on-tertiary-container font-bold shrink-0">
-          CamPay Milestone Custody
+          Fapshi Milestone Custody
         </span>
       </div>
 
@@ -906,7 +906,7 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                 />
                 <span className="font-body-sm text-on-surface-variant">
                   I legally attest under Cameroon &amp; OHADA Uniform Act provisions that I hold 100% of master &amp; neighboring
-                  rights (or label mandate) for this project and authorize Crippo CamPay Escrow to administer the {revSharePct}%
+                  rights (or label mandate) for this project and authorize Crippo Escrow to administer the {revSharePct}%
                   revenue share ({pctPerShare}% per share) for {roiDurationMonths} months.
                 </span>
               </label>
