@@ -8,7 +8,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { useMarket } from '../contexts/MarketContext';
 import type { ListenerRegion, RaceMilestone, ValuationBreakdown } from '../types/crippo';
 
-const CATEGORIES = ['Single', 'EP / Album', 'TikTok Series', 'YouTube Show', 'Movie / Documentary'];
+const CATEGORIES = [
+  'Single',
+  'EP / Album',
+  'Music Video & Tour',
+  'YouTube / Podcast Series',
+  'TikTok Series',
+  'Film / Documentary',
+];
 const SOURCES = [
   'YouTube AdSense',
   'Spotify / Boomplay / Apple Music Streams',
@@ -114,9 +121,8 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
   ]);
   const [clearingEmail, setClearingEmail] = useState(user?.email || '');
 
-  // 02 Financial Terms: Fair Creator-Calibrated Share Price -> Auto-Derived Share Count
+  // 02 Financial Terms: Platform-Locked Share Price (Creators CANNOT set share price) -> Auto-Derived Share Count
   const [netBudgetXAF, setNetBudgetXAF] = useState(1500000);
-  const [selectedSharePriceXAF, setSelectedSharePriceXAF] = useState<number>(2500);
   const [revSharePct, setRevSharePct] = useState(25);
   const [roiDurationMonths, setRoiDurationMonths] = useState<6 | 12 | 18 | 24>(12);
   const [raceCloseDate, setRaceCloseDate] = useState(new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10));
@@ -124,52 +130,44 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
     new Date(Date.now() + 65 * 86400000).toISOString().slice(0, 10)
   );
 
-  // Compute creator-specific fair price per share & anti-exploitation cap
+  // Platform-assigned fair price per share calibrated strictly from creator reach & listener region
   const creatorPricingBounds = useMemo(() => {
     const subs = targetIssuer?.subscribers || 25000;
     const views = targetIssuer?.monthlyViews || 120000;
     const reach = Math.max(subs, Math.round(views / 3));
 
     let recommended = 2500;
-    let maxSafe = 5000;
-    let allowedTiers = [1000, 2500, 5000];
+    let tierLabel = 'Emerging / Mid-Tier Creator';
 
     if (listenerRegion === 'cameroon_africa') {
       if (reach < 25000) {
         recommended = 1000;
-        maxSafe = 5000;
+        tierLabel = 'Rising Creator (<25k reach · Local XAF)';
       } else if (reach < 150000) {
         recommended = 2500;
-        maxSafe = 5000;
+        tierLabel = 'Established Creator (25k–150k reach · Local XAF)';
       } else {
         recommended = 5000;
-        maxSafe = 10000;
-        allowedTiers = [1000, 2500, 5000, 10000];
+        tierLabel = 'Star Creator (150k+ reach · Local XAF)';
       }
     } else if (listenerRegion === 'diaspora_mixed') {
-      allowedTiers = [1000, 2500, 5000, 10000];
       if (reach < 25000) {
         recommended = 2500;
-        maxSafe = 10000;
+        tierLabel = 'Rising Creator (Diaspora Blend)';
       } else if (reach < 150000) {
         recommended = 5000;
-        maxSafe = 10000;
+        tierLabel = 'Established Creator (Diaspora Blend)';
       } else {
         recommended = 10000;
-        maxSafe = 10000;
+        tierLabel = 'Headliner (Diaspora Blend)';
       }
     } else {
-      allowedTiers = [2500, 5000, 10000, 15000];
       recommended = reach >= 50000 ? 10000 : 5000;
-      maxSafe = 15000;
+      tierLabel = 'Global Streaming Tier';
     }
 
-    return { recommended, maxSafe, allowedTiers };
+    return { recommended, tierLabel };
   }, [targetIssuer?.subscribers, targetIssuer?.monthlyViews, listenerRegion]);
-
-  useEffect(() => {
-    setSelectedSharePriceXAF(creatorPricingBounds.recommended);
-  }, [creatorPricingBounds.recommended]);
 
   // 03 Flight Plan
   const [milestones, setMilestones] = useState<RaceMilestone[]>([
@@ -229,7 +227,7 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
   } | null>(null);
 
   const grossTargetXAF = Math.ceil(Math.max(10000, netBudgetXAF) * 1.05);
-  const unitSharePriceXAF = Math.min(creatorPricingBounds.maxSafe, Math.max(500, selectedSharePriceXAF));
+  const unitSharePriceXAF = creatorPricingBounds.recommended;
   const totalShares = Math.max(10, Math.ceil(grossTargetXAF / unitSharePriceXAF));
   const pctPerShare = Number((revSharePct / Math.max(1, totalShares)).toFixed(4));
 
@@ -380,7 +378,6 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
             entityType: isVerifiedAgency ? 'agency' : 'solo',
             masterRightsOwned,
             distributor,
-            preferredSharePriceXAF: unitSharePriceXAF,
             wikiGrade: entityToUse?.wikiGrade,
           }),
         });
@@ -716,7 +713,7 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
           {step === 1 && (
             <section className="flex flex-col gap-4">
               <span className="font-label-xs uppercase text-secondary font-bold">
-                02 · Financial Terms &amp; Creator-Calibrated Share Pricing
+                02 · Project Budget &amp; Platform-Assigned Share Price
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -733,20 +730,12 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="font-label-xs uppercase text-on-surface-variant">
-                    Fair Price Per Share (Cap: {creatorPricingBounds.maxSafe.toLocaleString()} XAF)
+                    Platform Price Per Share (Locked)
                   </label>
-                  <select
-                    value={unitSharePriceXAF}
-                    onChange={(e) => setSelectedSharePriceXAF(Number(e.target.value))}
-                    className="px-3.5 py-2.5 rounded-xl border border-outline-variant/40 bg-transparent font-mono-num text-on-surface"
-                  >
-                    {creatorPricingBounds.allowedTiers.map((tier) => (
-                      <option key={tier} value={tier}>
-                        {tier.toLocaleString()} XAF / share
-                        {tier === creatorPricingBounds.recommended ? ' (Recommended)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="px-3.5 py-2.5 rounded-xl border border-secondary/40 bg-secondary/10 font-mono-num text-secondary font-bold flex items-center justify-between">
+                    <span>{unitSharePriceXAF.toLocaleString()} XAF</span>
+                    <span className="text-[10px] font-label-xs uppercase text-on-surface-variant">Admin / AI Set</span>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="font-label-xs uppercase text-on-surface-variant">Revenue Share % (1-90%)</label>
@@ -761,12 +750,14 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl border border-outline-variant/35 bg-surface-container-low/60 text-[12px] text-on-surface-variant">
-                <strong className="text-on-surface">Listener Protection Guardrail:</strong> To keep fan entry fair and prevent inflated pricing,{' '}
-                <strong className="text-secondary">{targetIssuer?.stageName || 'this creator'}</strong>&apos;s share price is calibrated to{' '}
-                <strong className="text-on-surface">{unitSharePriceXAF.toLocaleString()} XAF/share</strong>. Crippo automatically breaks your{' '}
-                {grossTargetXAF.toLocaleString()} XAF target into{' '}
-                <strong className="text-on-surface">{totalShares.toLocaleString()} total shares</strong>.
+              <div className="p-3.5 rounded-xl border border-outline-variant/35 bg-surface-container-low/60 text-[12px] text-on-surface-variant space-y-1">
+                <div>
+                  <strong className="text-on-surface">Listener Protection Lock:</strong> Creators do not set their own share price. Based on{' '}
+                  <strong className="text-secondary">{targetIssuer?.stageName || 'this creator'}</strong>&apos;s tier ({creatorPricingBounds.tierLabel}), Crippo locks share price at{' '}
+                  <strong className="text-on-surface">{unitSharePriceXAF.toLocaleString()} XAF/share</strong> and breaks your{' '}
+                  {grossTargetXAF.toLocaleString()} XAF target into{' '}
+                  <strong className="text-on-surface">{totalShares.toLocaleString()} project revenue-share units</strong>. Admin confirms final pricing before your raise goes live.
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -905,9 +896,10 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                   className="mt-1 accent-secondary"
                 />
                 <span className="font-body-sm text-on-surface-variant">
-                  I legally attest under Cameroon &amp; OHADA Uniform Act provisions that I hold 100% of master &amp; neighboring
-                  rights (or label mandate) for this project and authorize Crippo Escrow to administer the {revSharePct}%
-                  revenue share ({pctPerShare}% per share) for {roiDurationMonths} months.
+                  I legally attest under Cameroon &amp; OHADA Uniform Act commercial contract law that this offering is a{' '}
+                  <strong>Project Royalty &amp; Revenue-Share Participation</strong> (not personal equity), that I hold 100% of master &amp; neighboring
+                  rights (or label mandate) for this specific project, and authorize Crippo Escrow to administer the {revSharePct}%
+                  revenue share ({pctPerShare}% per unit) for {roiDurationMonths} months.
                 </span>
               </label>
 
@@ -1056,19 +1048,10 @@ export function LaunchRace({ onOpenApiSetup }: LaunchRaceProps) {
                   {auditPreview.valuationBreakdown.youtubeRpmXAF.toLocaleString()} XAF/1k
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedSharePriceXAF(auditPreview.valuationBreakdown.fairSharePriceXAF);
-                  showToast(
-                    'Fair Share Price Applied',
-                    `${auditPreview.valuationBreakdown.recommendedTotalShares} shares @ ${auditPreview.valuationBreakdown.fairSharePriceXAF.toLocaleString()} XAF covers your ${grossTargetXAF.toLocaleString()} XAF gross target.`
-                  );
-                }}
-                className="py-2 px-3 rounded-lg bg-secondary/15 text-secondary font-label-xs uppercase font-bold hover:bg-secondary/25 transition-colors"
-              >
-                Apply AI Share Split ({auditPreview.valuationBreakdown.recommendedTotalShares} shares)
-              </button>
+              <div className="py-2 px-3 rounded-lg bg-secondary/10 text-secondary font-label-xs uppercase font-bold text-center">
+                Platform Share Allocation: {auditPreview.valuationBreakdown.recommendedTotalShares} shares @{' '}
+                {auditPreview.valuationBreakdown.fairSharePriceXAF.toLocaleString()} XAF
+              </div>
               <p className="font-body-sm text-on-surface-variant pt-1 border-t border-outline-variant/20">
                 {auditPreview.regionalValuationNote}
               </p>

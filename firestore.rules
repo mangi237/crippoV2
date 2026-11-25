@@ -92,37 +92,53 @@ service cloud.firestore {
         'entityType', 'isClaimed', 'kycStatus', 'isPublic', 'createdAt', 'updatedAt'
       ]) &&
       data.keys().hasOnly([
-        'id', 'stageName', 'legalFullName', 'description', 'bio', 'upcomingProjects', 'category', 'genres',
-        'labelName', 'age', 'city', 'country', 'entityType',
-        'youtubeChannelId', 'tiktokHandle', 'instagramHandle', 'facebookPage', 'spotifyArtistId',
-        'avatarUrl', 'subscribers', 'monthlyViews', 'engagementRate',
+        'id', 'record_type', 'quota_bucket', 'stageName', 'legalFullName', 'gender',
+        'description', 'bio', 'shortBio', 'hometown', 'baseCity', 'primaryMarket',
+        'activeSince', 'education', 'languages', 'careerMilestones',
+        'upcomingProjects', 'category', 'genres', 'primaryRole', 'roles', 'subGenres',
+        'revenueWeightSplit', 'affiliations', 'discography', 'filmography', 'awards',
+        'pastRacesCount', 'onTimeDeliveryPct', 'combinedFollowers', 'audienceGeo',
+        'eligibleRaceCategories', 'labelName', 'age', 'city', 'country', 'entityType',
+        'youtubeChannelId', 'tiktokHandle', 'instagramHandle', 'facebookPage',
+        'spotifyArtistId', 'spotifyUrl', 'spotifyMonthlyListeners', 'spotifyStreams',
+        'website', 'avatarUrl', 'subscribers', 'monthlyViews', 'engagementRate',
         'catalogValuationXAF', 'marketCapXAF', 'dividendsDisbursedXAF', 'isrcCount',
-        'wikiGrade', 'payoutMomoNetwork',
-        'isClaimed', 'claimedByUid', 'bioVerificationCode', 'kycStatus',
-        'agencyName', 'affiliatedAgencyId', 'affiliatedAgencyUid', 'rccmNumber', 'niuNumber', 'isPublic', 'createdAt', 'updatedAt'
+        'wikiGrade', 'payoutMomoNetwork', 'isClaimed', 'claimedByUid',
+        'claimStatus', 'photoStatus', 'verificationStatus', 'sourceUrl', 'notes',
+        'bioVerificationCode', 'kycStatus', 'agencyName', 'agencyType',
+        'headquartersCity', 'foundedYear', 'founders', 'corporateBio',
+        'websiteAndSocials', 'corporateDocs', 'rosterCreatorIds', 'rosterSize',
+        'collectiveReach', 'specialties', 'activeMandatesCount',
+        'completedBrandCampaigns', 'agencyCrippoScore', 'brandName',
+        'industryVertical', 'operatingCountries', 'brandOverview', 'businessDocs',
+        'paymentReliabilityBadge', 'targetNiches', 'targetLanguages',
+        'typicalCampaignTier', 'pastCreatorCollaborations',
+        'affiliatedAgencyId', 'affiliatedAgencyUid', 'rccmNumber', 'niuNumber',
+        'isPublic', 'createdAt', 'updatedAt'
       ]) &&
       data.id == entityId &&
-      data.stageName is string && data.stageName.size() >= 1 && data.stageName.size() <= 100 &&
-      data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
-      data.city is string && data.city.size() >= 1 && data.city.size() <= 40 &&
-      data.country is string && data.country.size() >= 1 && data.country.size() <= 40 &&
-      data.entityType in ['solo', 'agency'] &&
+      data.stageName is string && data.stageName.size() >= 1 && data.stageName.size() <= 120 &&
+      data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+      data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+      data.country is string && data.country.size() >= 1 && data.country.size() <= 60 &&
+      data.entityType in ['solo', 'creator', 'agency', 'brand'] &&
       data.isClaimed is bool &&
       data.kycStatus in ['unverified', 'pending', 'verified', 'rejected'] &&
       data.isPublic is bool &&
-      (!('legalFullName' in data) || (data.legalFullName is string && data.legalFullName.size() <= 120)) &&
+      (!('legalFullName' in data) || (data.legalFullName is string && data.legalFullName.size() <= 140)) &&
       (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
       (!('bio' in data) || (data.bio is string && data.bio.size() <= 4000)) &&
-      (!('labelName' in data) || (data.labelName is string && data.labelName.size() <= 120)) &&
+      (!('shortBio' in data) || (data.shortBio is string && data.shortBio.size() <= 2000)) &&
+      (!('labelName' in data) || (data.labelName is string && data.labelName.size() <= 140)) &&
       (!('age' in data) || (data.age is number && data.age >= 0 && data.age <= 150)) &&
-      (!('genres' in data) || (data.genres is list && data.genres.size() <= 15)) &&
-      (!('upcomingProjects' in data) || (data.upcomingProjects is list && data.upcomingProjects.size() <= 10)) &&
-      (!('youtubeChannelId' in data) || (data.youtubeChannelId is string && data.youtubeChannelId.size() <= 120)) &&
-      (!('tiktokHandle' in data) || (data.tiktokHandle is string && data.tiktokHandle.size() <= 80)) &&
-      (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 80)) &&
-      (!('facebookPage' in data) || (data.facebookPage is string && data.facebookPage.size() <= 120)) &&
-      (!('spotifyArtistId' in data) || (data.spotifyArtistId is string && data.spotifyArtistId.size() <= 120)) &&
-      (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+      (!('genres' in data) || (data.genres is list && data.genres.size() <= 20)) &&
+      (!('upcomingProjects' in data) || (data.upcomingProjects is list && data.upcomingProjects.size() <= 12)) &&
+      (!('youtubeChannelId' in data) || (data.youtubeChannelId is string && data.youtubeChannelId.size() <= 200)) &&
+      (!('tiktokHandle' in data) || (data.tiktokHandle is string && data.tiktokHandle.size() <= 120)) &&
+      (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 120)) &&
+      (!('facebookPage' in data) || (data.facebookPage is string && data.facebookPage.size() <= 200)) &&
+      (!('spotifyArtistId' in data) || (data.spotifyArtistId is string && data.spotifyArtistId.size() <= 160)) &&
+      (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 600)) &&
       (!('subscribers' in data) || (data.subscribers is number && data.subscribers >= 0)) &&
       (!('monthlyViews' in data) || (data.monthlyViews is number && data.monthlyViews >= 0)) &&
       (!('engagementRate' in data) || (data.engagementRate is number && data.engagementRate >= 0)) &&
@@ -134,11 +150,11 @@ service cloud.firestore {
       (!('payoutMomoNetwork' in data) || (data.payoutMomoNetwork is string && data.payoutMomoNetwork.size() <= 40)) &&
       (!('claimedByUid' in data) || (data.claimedByUid is string && data.claimedByUid.size() <= 128)) &&
       (!('bioVerificationCode' in data) || (data.bioVerificationCode is string && data.bioVerificationCode.size() <= 32)) &&
-      (!('agencyName' in data) || (data.agencyName is string && data.agencyName.size() <= 100)) &&
+      (!('agencyName' in data) || (data.agencyName is string && data.agencyName.size() <= 140)) &&
       (!('affiliatedAgencyId' in data) || (data.affiliatedAgencyId is string && data.affiliatedAgencyId.size() <= 128)) &&
       (!('affiliatedAgencyUid' in data) || (data.affiliatedAgencyUid is string && data.affiliatedAgencyUid.size() <= 128)) &&
-      (!('rccmNumber' in data) || (data.rccmNumber is string && data.rccmNumber.size() <= 50)) &&
-      (!('niuNumber' in data) || (data.niuNumber is string && data.niuNumber.size() <= 50)) &&
+      (!('rccmNumber' in data) || (data.rccmNumber is string && data.rccmNumber.size() <= 60)) &&
+      (!('niuNumber' in data) || (data.niuNumber is string && data.niuNumber.size() <= 60)) &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }

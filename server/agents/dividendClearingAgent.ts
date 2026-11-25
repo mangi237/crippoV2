@@ -63,8 +63,11 @@ export async function runDividendClearing(input: DividendClearingInput): Promise
     input.holders.reduce((sum, h) => sum + Math.max(0, h.sharesHeld), 0)
   );
 
-  const ai = getGeminiClient();
-  const prompt = `You are Crippo's Automated Dividend Clearing Agent auditing a royalty disbursement statement.
+  let clearingNoteText = `Cleared ${investorPoolXAF.toLocaleString()} XAF (${input.revSharePct}% rev-share after 3% clearing fee) across ${input.holders.length} shareholders for ${input.periodLabel}.`;
+
+  try {
+    const ai = getGeminiClient();
+    const prompt = `You are Crippo's Automated Dividend Clearing Agent auditing a royalty disbursement statement.
 Produce a crisp 2-sentence institutional clearing note summarizing this FX conversion and waterfall:
 - Race: ${input.raceTitle} (${input.periodLabel})
 - Gross Reported Revenue: ${input.grossRevenueAmount} ${input.currency} @ ${fxRateToXAF} = ${grossXAF.toLocaleString()} XAF
@@ -72,22 +75,31 @@ Produce a crisp 2-sentence institutional clearing note summarizing this FX conve
 - Investor Royalty Pool (${input.revSharePct}%): ${investorPoolXAF.toLocaleString()} XAF across ${input.holders.length} shareholders
 - Creator Retained Pool: ${creatorNetRetainedXAF.toLocaleString()} XAF`;
 
-  const response = await ai.models.generateContent({
-    model: CRIPPO_GEMINI_MODEL,
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          clearingNote: { type: Type.STRING },
+    const response = await ai.models.generateContent({
+      model: CRIPPO_GEMINI_MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            clearingNote: { type: Type.STRING },
+          },
+          required: ['clearingNote'],
         },
-        required: ['clearingNote'],
       },
-    },
-  });
+    });
 
-  const parsed = JSON.parse((response.text || '{}').trim()) as { clearingNote?: string };
+    const raw = (response.text || '{}').trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+    const parsed = JSON.parse(raw) as { clearingNote?: string };
+    if (parsed.clearingNote?.trim()) {
+      clearingNoteText = parsed.clearingNote.trim();
+    }
+  } catch {
+    // Graceful deterministic fallback if GEMINI_API_KEY is unset or unavailable
+  }
+
+  const parsed = { clearingNote: clearingNoteText };
 
   const allocations: ShareholderAllocation[] = [];
   let payoutDispatchedCount = 0;

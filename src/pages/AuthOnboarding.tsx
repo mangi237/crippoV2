@@ -438,7 +438,7 @@ export function AuthOnboarding() {
         {/* Main Form Surface (Borderless on Page Background) */}
         {step === 1 ? (
           <div className="pt-4 border-t border-outline-variant/25 flex flex-col gap-5">
-            <button
+            {/* <button
               type="button"
               disabled={busy}
               onClick={handleGoogle}
@@ -447,7 +447,7 @@ export function AuthOnboarding() {
               <span className="truncate">
                 {lang === 'fr' ? 'Continuer avec Google' : 'Continue with Google'}
               </span>
-            </button>
+            </button> */}
 
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-outline-variant/40" />

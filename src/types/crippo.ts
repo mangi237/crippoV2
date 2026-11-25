@@ -45,25 +45,73 @@ export interface UserPrivate {
   updatedAt?: unknown;
 }
 
+export interface EntityAffiliation {
+  role: string;
+  type: string;
+  agencyId: string;
+  agencyName: string;
+  verified: boolean;
+}
+
+export interface EntityDiscographyItem {
+  title: string;
+  year: number | string;
+  type: string;
+}
+
+export interface EntityFilmographyItem {
+  title: string;
+  year: number | string;
+  role: string;
+}
+
 export interface Entity {
   id: string;
+  record_type?: 'creator' | 'creator_rising' | 'label_agency' | 'brand';
+  quota_bucket?: 'male_creator' | 'female_creator' | 'label_agency' | 'brand' | 'rising_hope';
   stageName: string;
   legalFullName?: string;
+  gender?: 'M' | 'F';
   description?: string;
   bio?: string;
+  shortBio?: string;
+  hometown?: string;
+  baseCity?: string;
+  primaryMarket?: string;
+  activeSince?: string;
+  education?: string;
+  languages?: string[];
+  careerMilestones?: string[];
   labelName?: string;
   age?: number;
   genres?: string[];
+  primaryRole?: string;
+  roles?: string[];
+  subGenres?: string[];
+  revenueWeightSplit?: Record<string, number>;
+  affiliations?: EntityAffiliation[];
+  discography?: EntityDiscographyItem[];
+  filmography?: EntityFilmographyItem[];
+  awards?: string[];
+  pastRacesCount?: number;
+  onTimeDeliveryPct?: number;
+  combinedFollowers?: number;
+  audienceGeo?: string;
+  eligibleRaceCategories?: string[];
   upcomingProjects?: string[];
   category: string;
   city: string;
   country: string;
-  entityType: 'solo' | 'agency';
+  entityType: 'solo' | 'creator' | 'agency' | 'brand';
   youtubeChannelId?: string;
   tiktokHandle?: string;
   instagramHandle?: string;
   facebookPage?: string;
   spotifyArtistId?: string;
+  spotifyUrl?: string;
+  spotifyMonthlyListeners?: number;
+  spotifyStreams?: number;
+  website?: string;
   avatarUrl?: string;
   subscribers?: number;
   monthlyViews?: number;
@@ -76,9 +124,52 @@ export interface Entity {
   payoutMomoNetwork?: string;
   isClaimed: boolean;
   claimedByUid?: string;
+  claimStatus?: string;
+  photoStatus?: string;
+  verificationStatus?: string;
+  sourceUrl?: string;
+  notes?: string;
   bioVerificationCode?: string;
   kycStatus: EntityKycStatus;
   agencyName?: string;
+  agencyType?: string;
+  headquartersCity?: string;
+  foundedYear?: number;
+  founders?: string[];
+  corporateBio?: string;
+  websiteAndSocials?: {
+    website?: string;
+    instagram?: string;
+    youtube?: string;
+    facebook?: string;
+    tiktok?: string;
+  };
+  corporateDocs?: {
+    rccmNumber?: string;
+    niuNumber?: string;
+    verified?: boolean;
+  };
+  rosterCreatorIds?: string[];
+  rosterSize?: number;
+  collectiveReach?: number;
+  specialties?: string[];
+  activeMandatesCount?: number;
+  completedBrandCampaigns?: number;
+  agencyCrippoScore?: number;
+  brandName?: string;
+  industryVertical?: string;
+  operatingCountries?: string[];
+  brandOverview?: string;
+  businessDocs?: {
+    rccmNumber?: string;
+    niuNumber?: string;
+    verified?: boolean;
+  };
+  paymentReliabilityBadge?: string;
+  targetNiches?: string[];
+  targetLanguages?: string[];
+  typicalCampaignTier?: string;
+  pastCreatorCollaborations?: string[];
   affiliatedAgencyId?: string;
   affiliatedAgencyUid?: string;
   rccmNumber?: string;

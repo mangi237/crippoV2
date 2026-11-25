@@ -414,7 +414,7 @@ export async function scrapeSpotifyArtists(options: {
     'automation-lab/spotify-scraper',
     {
       mode: urls.length > 0 ? 'urls' : 'search',
-      ...(urls.length > 0 ? { urls } : {}),
+      ...(urls.length > 0 ? { urls } : { searchType: 'artists' }),
       ...(searchTerms.length > 0 ? { searchTerms } : {}),
       maxResults: options.maxResults || 10,
     },

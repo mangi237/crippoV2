@@ -8,6 +8,7 @@ import { useMarket } from '../contexts/MarketContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AuthPromptModal } from '../components/AuthPromptModal';
 import { VerifiedCreatorOnly } from '../components/VerifiedCreatorOnly';
+import { isBrandEntity } from '../utils/entityDirectory';
 
 interface BrandsHubProps {
   onOpenApiSetup: () => void;
@@ -86,6 +87,11 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
   const totalFanRaceCapitalXAF = useMemo(
     () => races.reduce((a, r) => a + r.sharesSold * r.currentSharePriceXAF, 0),
     [races]
+  );
+
+  const indexedBrands = useMemo(
+    () => entities.filter((e) => isBrandEntity(e)),
+    [entities]
   );
 
   const handleCreateEscrowCampaign = async (e: React.FormEvent) => {
@@ -408,6 +414,47 @@ export function BrandsHub({ onOpenApiSetup }: BrandsHubProps) {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Indexed Cameroonian Brand Sponsors (20) */}
+            <div className="border-t border-outline-variant/25 pt-5 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-headline-sm text-on-surface font-bold">
+                  Indexed Cameroon Brand Sponsors ({indexedBrands.length})
+                </h3>
+                <Link
+                  to="/creators"
+                  className="font-label-xs uppercase text-secondary font-bold hover:underline"
+                >
+                  Open Directory →
+                </Link>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {indexedBrands.map((b) => (
+                  <Link
+                    key={b.id}
+                    to={`/creator/${b.id}`}
+                    className="p-3.5 rounded-xl border border-outline-variant/25 hover:border-secondary transition-colors flex flex-col gap-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-label-md font-bold text-on-surface truncate">
+                        {b.brandName || b.stageName}
+                      </span>
+                      <span className="text-[10px] font-label-xs uppercase font-bold text-secondary shrink-0">
+                        {b.industryVertical || b.category}
+                      </span>
+                    </div>
+                    <span className="text-[12px] text-on-surface-variant">
+                      {b.typicalCampaignTier || 'Mid-Market (250K–1M XAF)'} · {b.city}
+                    </span>
+                    {b.targetNiches && b.targetNiches.length > 0 && (
+                      <span className="text-[11px] text-on-surface-variant truncate">
+                        Niches: {b.targetNiches.join(', ')}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
             </div>
 
             {/* BEAC Clearing Log */}
