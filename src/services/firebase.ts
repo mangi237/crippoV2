@@ -19,6 +19,7 @@ export enum OperationType {
   GET = 'get',
   WRITE = 'write',
 }
+//nothing to change here 
 
 export interface FirestoreErrorInfo {
   error: string;
